@@ -1,17 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Blitzy branding: Primary Blitzy logo for general use -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" width="200" height="50">
-  <defs>
-    <linearGradient id="blitzyGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="14%" style="stop-color:#7A6DEC"/>
-      <stop offset="63.32%" style="stop-color:#5B39F3"/>
-      <stop offset="86%" style="stop-color:#4101DB"/>
-    </linearGradient>
-  </defs>
-  <!-- Background shape -->
-  <rect x="2" y="10" width="30" height="30" rx="6" fill="url(#blitzyGradient)"/>
-  <!-- Lightning bolt icon -->
-  <path d="M22 18 L14 28 L18 28 L16 35 L24 25 L20 25 L22 18Z" fill="#94FAD5"/>
-  <!-- Text -->
-  <text x="42" y="34" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="22" font-weight="600" fill="#5B39F3">Blitzy</text>
+<!-- Blitzy branding: Primary logo for general use -->
+<svg width="200px" height="50px" viewBox="0 0 200 50" version="1.1" xmlns="http://www.w3.org/2000/svg">
+    <title>Blitzy Logo</title>
+    <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="blitzy_logo" fill-rule="nonzero">
+            <!-- Icon: Stylized lightning bolt in rounded square -->
+            <rect x="2" y="6" width="38" height="38" rx="8" fill="#5B39F3"/>
+            <path d="M26 14L16 27h6l-3 10 12-14h-6l3-9z" fill="#94FAD5"/>
+            <!-- Wordmark: BLITZY text paths -->
+            <!-- Letter B -->
+            <path d="M52 12h8c2.5 0 4.5 0.8 5.8 2.1 1 1 1.5 2.3 1.5 3.9v0.1c0 2.3-1.2 3.7-2.8 4.5 2.3 0.9 3.8 2.4 3.8 5.1v0.1c0 3.8-3.1 5.9-7.8 5.9H52V12zm8.5 8.8c1.8 0 3-0.8 3-2.4v-0.1c0-1.4-1-2.3-2.8-2.3h-4.5v4.8h4.3zm1 9.2c1.9 0 3.1-0.8 3.1-2.5v-0.1c0-1.5-1.1-2.5-3.3-2.5h-5.1v5.1h5.3z" fill="#5B39F3"/>
+            <!-- Letter L -->
+            <path d="M72 12h4.2v17.5h10.3v4.2H72V12z" fill="#5B39F3"/>
+            <!-- Letter I -->
+            <path d="M90 12h4.2v21.7H90V12z" fill="#5B39F3"/>
+            <!-- Letter T -->
+            <path d="M98 12h15.5v4H108v17.7h-4.2V16h-5.8V12z" fill="#5B39F3"/>
+            <!-- Letter Z -->
+            <path d="M116 12h14.5v3.5l-9.2 14h9.4v4.2H116v-3.5l9.2-14H116V12z" fill="#5B39F3"/>
+            <!-- Letter Y -->
+            <path d="M134 12h4.4l4.6 7.5 4.6-7.5h4.4l-7 11.2v10.5h-4.2V23.2L134 12z" fill="#5B39F3"/>
+            <!-- Accent dot -->
+            <circle cx="160" cy="31" r="3" fill="#94FAD5"/>
+        </g>
+    </g>
 </svg>
