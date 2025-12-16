@@ -8,6 +8,7 @@ _build/
 !.github
 !.mailmap
 !.weblate.json
+!.env.example
 # compiled python files
 *.py[co]
 __pycache__/
@@ -41,6 +42,14 @@ tsconfig.json
 package-lock.json
 package.json
 .husky
+
+# Allow sidecar directory js tooling
+!sidecar/package.json
+!sidecar/package-lock.json
+!sidecar/tsconfig.json
+
+# Python virtual environment
+venv/
 
 # various virtualenv
 /bin/
