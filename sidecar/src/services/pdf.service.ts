@@ -35,43 +35,43 @@ export interface PdfMetadata {
    * Document title from PDF metadata.
    * May be undefined if not set in the document.
    */
-  title?: string;
+  title?: string | undefined;
 
   /**
    * Document author from PDF metadata.
    * May be undefined if not set in the document.
    */
-  author?: string;
+  author?: string | undefined;
 
   /**
    * Document subject/description from PDF metadata.
    * May be undefined if not set in the document.
    */
-  subject?: string;
+  subject?: string | undefined;
 
   /**
    * Application that created the original document.
    * May be undefined if not set in the document.
    */
-  creator?: string;
+  creator?: string | undefined;
 
   /**
    * Application that produced the PDF file.
    * May be undefined if not set in the document.
    */
-  producer?: string;
+  producer?: string | undefined;
 
   /**
    * Date when the document was originally created.
    * May be undefined if not set in the document.
    */
-  creationDate?: Date;
+  creationDate?: Date | undefined;
 
   /**
    * Date when the document was last modified.
    * May be undefined if not set in the document.
    */
-  modificationDate?: Date;
+  modificationDate?: Date | undefined;
 }
 
 /**
