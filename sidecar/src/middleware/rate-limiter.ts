@@ -24,7 +24,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
-import { createErrorResponse } from '../contracts/response.schema.js';
+import { AppError } from './error-handler.js';
 
 // =============================================================================
 // TYPE DEFINITIONS
@@ -68,15 +68,17 @@ export interface RateLimitConfig {
 /**
  * Rate limit context provided by @fastify/rate-limit in error callbacks.
  * This interface represents the shape of the context object passed to
- * the errorResponseBuilder callback.
+ * the errorResponseBuilder callback as per @fastify/rate-limit types.
+ * 
+ * @see https://github.com/fastify/fastify-rate-limit#error-response-builder
  */
 interface RateLimitContext {
-  /** Maximum requests allowed per window */
-  max: number;
-  /** Remaining requests in current window */
-  remaining: number;
+  /** Whether the client is banned (exceeded ban threshold) */
+  ban: boolean;
   /** Time until the rate limit resets (human-readable string like "1 second") */
   after: string;
+  /** Maximum requests allowed per window */
+  max: number;
   /** Time to live in milliseconds until reset */
   ttl: number;
 }
@@ -221,13 +223,17 @@ export async function registerRateLimiter(
     /**
      * Custom error response builder for rate limit exceeded scenarios.
      *
-     * Generates a standardized RATE_LIMITED error response that matches
-     * the API contract defined in response.schema.ts. Also logs a warning
-     * with full context for monitoring and alerting purposes.
+     * Generates an AppError with RATE_LIMITED code that the central error
+     * handler (error-handler.ts) will process into a standardized response.
+     * Also logs a warning with full context for monitoring and alerting.
+     *
+     * IMPORTANT: @fastify/rate-limit throws the return value of this function.
+     * We throw an AppError which the error handler recognizes and processes
+     * into the appropriate HTTP 429 response with structured error body.
      *
      * @param request - The rate-limited request
      * @param context - Rate limit context with limit, remaining, and reset info
-     * @returns Standardized ErrorResponse object
+     * @returns AppError with RATE_LIMITED code and details
      */
     errorResponseBuilder: (
       request: FastifyRequest,
@@ -242,23 +248,24 @@ export async function registerRateLimiter(
           requestId,
           ip: request.ip,
           limit: context.max,
-          remaining: context.remaining,
           resetAfter: context.after,
           ttl: context.ttl,
+          banned: context.ban,
           apiKeyPresent: Boolean(request.headers['x-api-key']),
         },
         'Rate limit exceeded'
       );
 
-      // Create standardized error response matching API contract
-      return createErrorResponse(
+      // Create an AppError that the central error handler will process
+      // The error handler maps RATE_LIMITED to HTTP 429 and includes details
+      return new AppError(
         'RATE_LIMITED',
         `Rate limit exceeded. Maximum ${context.max} requests per ${rateLimitConfig.timeWindow}ms. Try again later.`,
-        requestId,
         {
           limit: context.max,
-          remaining: context.remaining,
           reset: context.after,
+          ttl: context.ttl,
+          banned: context.ban,
         }
       );
     },
