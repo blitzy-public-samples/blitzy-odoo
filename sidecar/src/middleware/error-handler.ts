@@ -77,7 +77,10 @@ export class AppError extends Error {
     super(message);
     this.name = 'AppError';
     this.code = code;
-    this.details = details;
+    // Only assign details if provided (satisfies exactOptionalPropertyTypes)
+    if (details !== undefined) {
+      this.details = details;
+    }
 
     // Maintains proper stack trace for where error was thrown (V8 engines)
     if (Error.captureStackTrace) {
