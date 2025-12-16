@@ -1,0 +1,91 @@
+{
+  "_comment": "Test fixture for delivery slip rendering. IMPORTANT: Per Agent Action Plan Section 0.8.5, delivery slips intentionally have unit_price and subtotal set to 0 for all line items as they are shipping documents showing quantities only - this is standard business practice for warehouse/logistics documents where pricing information is confidential.",
+  "request_id": "d3f1a8c9-7b2e-4f5d-9a1c-6e8b0c2d4a7f",
+  "report_type": "delivery_slip",
+  "record_ids": [42],
+  "data": {
+    "company": {
+      "name": "ACME Corporation",
+      "street": "123 Business Ave",
+      "street2": "Suite 500",
+      "city": "San Francisco",
+      "state": "CA",
+      "zip": "94102",
+      "country": "United States",
+      "phone": "+1 (555) 123-4567",
+      "email": "warehouse@acme-corp.example.com"
+    },
+    "partner": {
+      "name": "Tech Solutions Inc.",
+      "street": "789 Enterprise Blvd",
+      "street2": "Receiving Dock B",
+      "city": "Seattle",
+      "state": "WA",
+      "zip": "98101",
+      "country": "United States",
+      "phone": "+1 (555) 987-6543"
+    },
+    "lines": [
+      {
+        "sequence": 1,
+        "product_name": "Widget Pro",
+        "description": "Professional grade widget - Model WP-2000",
+        "quantity": 10,
+        "uom": "Units",
+        "unit_price": 0,
+        "discount": 0,
+        "subtotal": 0
+      },
+      {
+        "sequence": 2,
+        "product_name": "Connector Kit",
+        "description": "Universal connector kit with adapters",
+        "quantity": 5,
+        "uom": "Kits",
+        "unit_price": 0,
+        "discount": 0,
+        "subtotal": 0
+      },
+      {
+        "sequence": 3,
+        "product_name": "Industrial Cable - 50ft",
+        "description": "Heavy-duty shielded industrial cable",
+        "quantity": 20,
+        "uom": "Units",
+        "unit_price": 0,
+        "discount": 0,
+        "subtotal": 0
+      },
+      {
+        "sequence": 4,
+        "product_name": "Mounting Brackets Set",
+        "description": "Stainless steel mounting brackets - Pack of 4",
+        "quantity": 8,
+        "uom": "Sets",
+        "unit_price": 0,
+        "discount": 0,
+        "subtotal": 0
+      }
+    ],
+    "totals": {
+      "subtotal": 0,
+      "tax_amount": 0,
+      "total": 0,
+      "currency_symbol": "$"
+    },
+    "metadata": {
+      "number": "WH/OUT/00042",
+      "date": "2024-01-22",
+      "reference": "SO-2024-0042",
+      "notes": "Please sign for receipt. Handle with care - fragile items included. Contact warehouse supervisor at ext. 234 for any discrepancies.",
+      "scheduled_date": "2024-01-25",
+      "carrier": "FedEx Ground",
+      "tracking_reference": "794644790278"
+    }
+  },
+  "options": {
+    "page_size": "A4",
+    "language": "en_US",
+    "copies": 2
+  }
+}
