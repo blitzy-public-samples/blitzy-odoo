@@ -1,0 +1,311 @@
+{{!--
+  Line Items Table Partial Template
+  
+  Shared Handlebars partial for rendering line items table in PDF documents.
+  Used by invoice.hbs, quote.hbs, and delivery_slip.hbs templates.
+  
+  This partial implements a reusable table structure supporting:
+  - Product/service lines with quantity, unit price, discount, taxes, and subtotal
+  - Section headers (line_section) with bold styling and optional subtotals
+  - Subsection headers (line_subsection) with semi-bold styling
+  - Note lines (line_note) with italic styling spanning all columns
+  - Combo products with special formatting
+  - Configurable column visibility based on document type
+  - Proper indentation for hierarchical line groupings
+  
+  The layout mirrors Odoo's QWeb templates including:
+  - addons/account/views/report_invoice.xml
+  - addons/sale/report/ir_actions_report_templates.xml
+  - addons/stock/report/report_deliveryslip.xml
+  
+  Context Variables Expected:
+  ─────────────────────────────────────────────────────────────────────────────
+  @param {Array<Object>} lines - Array of line item objects
+  @param {string} lines[].display_type - Line type: 'line_section', 'line_subsection', 'line_note', 'product', or undefined
+  @param {string} lines[].name - Product/service name or section/note text
+  @param {number|string} lines[].quantity - Quantity ordered/delivered
+  @param {string} lines[].uom - Unit of measure (e.g., 'Units', 'Hours')
+  @param {number|string} lines[].unit_price - Unit price (monetary value)
+  @param {number|string} lines[].discount - Discount percentage (e.g., '10%' or 10)
+  @param {string} lines[].taxes - Tax labels/names (e.g., 'VAT 20%')
+  @param {number|string} lines[].subtotal - Line subtotal amount
+  @param {string} lines[].padding_class - CSS padding class for indentation (e.g., 'px-2', 'px-3')
+  @param {number|string} lines[].section_subtotal - Subtotal for sections/subsections
+  
+  @param {boolean} showPrices - Whether to show price-related columns (false for delivery slips)
+  @param {boolean} showDiscount - Whether to show discount column
+  @param {boolean} showTaxes - Whether to show taxes column
+  @param {Object} currency - Currency object for formatting monetary values
+  @param {string} currency.symbol - Currency symbol (e.g., '$', '€')
+  @param {string} currency.position - Symbol position: 'before' or 'after'
+  @param {number} sectionColspan - Number of columns for section row spanning
+  
+  CSS Classes Used (from pdf.css):
+  ─────────────────────────────────────────────────────────────────────────────
+  Tables: .table, .table-borderless, .o_main_table, .o_has_total_table, .mb-0
+  Alignment: .text-start, .text-end, .text-nowrap
+  Typography: .fw-bolder, .fw-bold, .fst-italic
+  Line Types: .o_line_section, .o_line_subsection, .o_line_note
+  Price Display: .o_td_quantity, .o_price_total
+  Indentation: .px-2, .px-3
+  
+  @version 1.0.0
+  @requires Handlebars helpers: eq, formatCurrency
+--}}
+
+{{!-- Main Line Items Table --}}
+<table class="table o_main_table o_has_total_table table-borderless mb-0">
+  {{!-- Table Header Row --}}
+  <thead>
+    <tr>
+      {{!-- Description Column - Always Visible --}}
+      <th name="th_description" class="text-start">
+        <span>Description</span>
+      </th>
+      
+      {{!-- Quantity Column - Always Visible --}}
+      <th name="th_quantity" class="text-end text-nowrap">
+        <span>Quantity</span>
+      </th>
+      
+      {{!-- Unit Price Column - Conditional (hidden for delivery slips) --}}
+      {{#if showPrices}}
+      <th name="th_priceunit" class="text-end text-nowrap">
+        <span>Unit Price</span>
+      </th>
+      {{/if}}
+      
+      {{!-- Discount Column - Conditional (shown when any line has discount) --}}
+      {{#if showDiscount}}
+      <th name="th_discount" class="text-end">
+        <span>Disc.%</span>
+      </th>
+      {{/if}}
+      
+      {{!-- Taxes Column - Conditional (shown when any line has taxes) --}}
+      {{#if showTaxes}}
+      <th name="th_taxes" class="text-end">
+        <span>Taxes</span>
+      </th>
+      {{/if}}
+      
+      {{!-- Amount/Subtotal Column - Conditional (hidden for delivery slips) --}}
+      {{#if showPrices}}
+      <th name="th_subtotal" class="text-end">
+        <span>Amount</span>
+      </th>
+      {{/if}}
+    </tr>
+  </thead>
+  
+  {{!-- Table Body with Line Items --}}
+  <tbody class="line_items_tbody">
+    {{#each lines}}
+    {{!-- ================================================================
+         SECTION LINE TYPE
+         Bold styling with o_line_section class, spans most columns
+         with optional section subtotal in the Amount column
+         ================================================================ --}}
+    {{#if (eq this.display_type "line_section")}}
+    <tr class="fw-bolder o_line_section" name="tr_section">
+      {{!-- Section Name - Spans columns up to amount --}}
+      <td name="td_section_name" 
+          colspan="{{../sectionColspan}}"
+          class="{{this.padding_class}}">
+        <span>{{this.name}}</span>
+      </td>
+      {{!-- Section Subtotal - Only shown if prices are displayed --}}
+      {{#if ../showPrices}}
+      <td name="td_section_subtotal" class="text-end o_price_total">
+        {{#if this.section_subtotal}}
+        <span class="text-nowrap">{{formatCurrency this.section_subtotal ../currency}}</span>
+        {{/if}}
+      </td>
+      {{/if}}
+    </tr>
+    
+    {{!-- ================================================================
+         SUBSECTION LINE TYPE
+         Semi-bold styling with o_line_subsection class, indented with px-2
+         Similar structure to sections but with different visual weight
+         ================================================================ --}}
+    {{else if (eq this.display_type "line_subsection")}}
+    <tr class="fw-bold o_line_subsection" name="tr_subsection">
+      {{!-- Subsection Name - Spans columns with slight indentation --}}
+      <td name="td_subsection_name"
+          colspan="{{../sectionColspan}}"
+          class="{{#if this.padding_class}}{{this.padding_class}}{{else}}px-2{{/if}}">
+        <span>{{this.name}}</span>
+      </td>
+      {{!-- Subsection Subtotal - Only shown if prices are displayed --}}
+      {{#if ../showPrices}}
+      <td name="td_subsection_subtotal" class="text-end o_price_total">
+        {{#if this.section_subtotal}}
+        <span class="text-nowrap">{{formatCurrency this.section_subtotal ../currency}}</span>
+        {{/if}}
+      </td>
+      {{/if}}
+    </tr>
+    
+    {{!-- ================================================================
+         NOTE LINE TYPE
+         Italic styling with o_line_note class
+         Spans all columns (colspan="99") as notes are full-width
+         No price information displayed for notes
+         ================================================================ --}}
+    {{else if (eq this.display_type "line_note")}}
+    <tr class="fst-italic o_line_note" name="tr_note">
+      <td name="td_note_text"
+          colspan="99"
+          class="{{this.padding_class}}">
+        <span>{{this.name}}</span>
+      </td>
+    </tr>
+    
+    {{!-- ================================================================
+         PRODUCT LINE TYPE (Default)
+         Standard product/service line with all data columns
+         Displays: name, quantity with UoM, unit price, discount, taxes, subtotal
+         Uses padding_class for proper indentation within sections
+         ================================================================ --}}
+    {{else}}
+    <tr name="tr_product">
+      {{!-- Product/Service Name/Description --}}
+      <td name="td_product_name" class="{{this.padding_class}}">
+        <span>{{this.name}}</span>
+      </td>
+      
+      {{!-- Quantity with Unit of Measure --}}
+      <td name="td_quantity" class="o_td_quantity text-end">
+        <span class="text-nowrap">{{this.quantity}}</span>
+        {{#if this.uom}}
+        <span class="text-nowrap"> {{this.uom}}</span>
+        {{/if}}
+      </td>
+      
+      {{!-- Unit Price (conditional) --}}
+      {{#if ../showPrices}}
+      <td name="td_priceunit" class="text-end text-nowrap">
+        <span>{{formatCurrency this.unit_price ../currency}}</span>
+      </td>
+      {{/if}}
+      
+      {{!-- Discount Percentage (conditional) --}}
+      {{#if ../showDiscount}}
+      <td name="td_discount" class="text-end">
+        {{#if this.discount}}
+        <span class="text-nowrap">{{this.discount}}</span>
+        {{else}}
+        <span>-</span>
+        {{/if}}
+      </td>
+      {{/if}}
+      
+      {{!-- Tax Labels (conditional) --}}
+      {{#if ../showTaxes}}
+      <td name="td_taxes" class="text-end {{#if (lte (strLength this.taxes) 10)}}text-nowrap{{/if}}">
+        {{#if this.taxes}}
+        <span>{{this.taxes}}</span>
+        {{/if}}
+      </td>
+      {{/if}}
+      
+      {{!-- Line Subtotal/Amount (conditional) --}}
+      {{#if ../showPrices}}
+      <td name="td_subtotal" class="text-end o_price_total">
+        <span class="text-nowrap">{{formatCurrency this.subtotal ../currency}}</span>
+      </td>
+      {{/if}}
+    </tr>
+    {{/if}}
+    {{/each}}
+  </tbody>
+</table>
+
+{{!--
+  Usage Examples:
+  ─────────────────────────────────────────────────────────────────────────────
+  
+  Invoice Template (invoice.hbs):
+  {{> line-items 
+      lines=lines 
+      showPrices=true 
+      showDiscount=hasDiscount 
+      showTaxes=hasTaxes 
+      currency=currency 
+      sectionColspan=5
+  }}
+  
+  Quote Template (quote.hbs):
+  {{> line-items 
+      lines=lines 
+      showPrices=true 
+      showDiscount=hasDiscount 
+      showTaxes=hasTaxes 
+      currency=currency 
+      sectionColspan=5
+  }}
+  
+  Delivery Slip Template (delivery_slip.hbs):
+  {{> line-items 
+      lines=lines 
+      showPrices=false 
+      showDiscount=false 
+      showTaxes=false 
+      currency=currency 
+      sectionColspan=2
+  }}
+  
+  Sample Line Data Structure:
+  {
+    "lines": [
+      {
+        "display_type": "line_section",
+        "name": "Office Furniture",
+        "padding_class": "",
+        "section_subtotal": 1500.00
+      },
+      {
+        "display_type": "product",
+        "name": "Ergonomic Desk Chair",
+        "quantity": 5,
+        "uom": "Units",
+        "unit_price": 200.00,
+        "discount": "10%",
+        "taxes": "VAT 20%",
+        "subtotal": 900.00,
+        "padding_class": "px-2"
+      },
+      {
+        "display_type": "line_note",
+        "name": "Assembly included",
+        "padding_class": "px-2"
+      },
+      {
+        "display_type": "line_subsection",
+        "name": "Monitor Arms",
+        "padding_class": "px-2",
+        "section_subtotal": 600.00
+      },
+      {
+        "display_type": "product",
+        "name": "Dual Monitor Arm",
+        "quantity": 5,
+        "uom": "Units",
+        "unit_price": 120.00,
+        "discount": "",
+        "taxes": "VAT 20%",
+        "subtotal": 600.00,
+        "padding_class": "px-3"
+      }
+    ],
+    "showPrices": true,
+    "showDiscount": true,
+    "showTaxes": true,
+    "currency": {
+      "symbol": "$",
+      "position": "before"
+    },
+    "sectionColspan": 5
+  }
+--}}
