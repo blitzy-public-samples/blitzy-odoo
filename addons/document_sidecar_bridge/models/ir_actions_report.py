@@ -176,15 +176,14 @@ class IrActionsReport(models.Model):
         if not sidecar_report_type:
             # This shouldn't happen if called correctly, but be defensive
             raise SidecarUnavailable(
-                f"Report '{report.report_name}' is not supported by sidecar"
+                f"Report '{report.report_name}' is not supported by sidecar",
             )
 
         # Get the single record to render
         record = self._get_record_for_sidecar(report, res_ids)
         if not record:
-            raise SidecarUnavailable(
-                "No record provided for sidecar rendering"
-            )
+            msg = "No record provided for sidecar rendering"
+            raise SidecarUnavailable(msg)
 
         # Create client and render
         client = SidecarClient(self.env)
@@ -262,11 +261,11 @@ class IrActionsReport(models.Model):
                 "Falling back to native QWeb rendering.",
                 report.report_name,
                 res_ids,
-                str(e),
+                e,
             )
             return super()._render_qweb_pdf(report_ref, res_ids, data)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - Intentional catch-all for fallback
             # Catch any other unexpected exceptions
             # Log with full traceback for debugging, but still fall back gracefully
             _logger.error(
@@ -275,7 +274,7 @@ class IrActionsReport(models.Model):
                 "Traceback:\n%s",
                 report.report_name,
                 res_ids,
-                str(e),
+                e,
                 traceback.format_exc(),
             )
             return super()._render_qweb_pdf(report_ref, res_ids, data)

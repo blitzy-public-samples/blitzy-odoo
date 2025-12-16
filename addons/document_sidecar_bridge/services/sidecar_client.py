@@ -652,7 +652,7 @@ class SidecarClient:
                     request_id, response.status_code, error_detail,
                 )
                 msg = f"Sidecar returned HTTP {response.status_code}: {error_detail}"
-                raise SidecarUnavailable(msg)
+                raise SidecarUnavailable(msg)  # noqa: TRY301
 
             # Parse response JSON
             response_data = response.json()
@@ -661,7 +661,7 @@ class SidecarClient:
             pdf_base64 = response_data.get('pdf_base64')
             if not pdf_base64:
                 msg = "Sidecar response missing pdf_base64 field"
-                raise SidecarUnavailable(msg)
+                raise SidecarUnavailable(msg)  # noqa: TRY301
 
             # Decode base64 to binary PDF content
             pdf_content = base64.b64decode(pdf_base64)
