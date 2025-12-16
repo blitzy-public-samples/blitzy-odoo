@@ -1,3 +1,6 @@
+// Blitzy branding: This file has been modified to apply Blitzy visual branding
+// to the main navigation bar. Changes include text color overrides for
+// proper contrast against the gradient background and hover state styling.
 
 // = Main Navbar
 // ============================================================================
@@ -11,6 +14,7 @@
     padding-top: $o-navbar-padding-v;
     padding-bottom: $o-navbar-padding-v;
     border-bottom: $o-navbar-border-bottom;
+    // Blitzy branding: Background now uses gradient from navbar.variables.scss
     background: $o-navbar-background;
     font-size: $o-navbar-font-size;
 
@@ -157,10 +161,14 @@
 
             &:hover {
                 background: var(--NavBar-entry-backgroundColor--hover, #{$o-navbar-entry-bg--hover});
+                // Blitzy branding: White text on hover for better contrast with gradient
+                color: #FFFFFF;
             }
 
             &:focus {
                 background: var(--NavBar-entry-backgroundColor--focus, #{$o-navbar-entry-bg--hover});
+                // Blitzy branding: White text on focus for accessibility
+                color: #FFFFFF;
             }
 
             &:active {
@@ -239,6 +247,19 @@
             color: var(--o-navbar-badge-color, $o-navbar-badge-color);
             text-shadow: var(--o-navbar-badge-text-shadow, #{$o-navbar-badge-text-shadow});
             transform: translate(-0.6em, -30%);
+        }
+    }
+
+    // Blitzy branding: Ensure nav text colors use Blitzy mint accent (#94FAD5)
+    // --------------------------------------------------------------------------
+    .o_nav_entry,
+    .dropdown-toggle:not(.o-dropdown-toggle-custo) {
+        // Blitzy branding: Explicit mint color for navbar text
+        color: #94FAD5;
+        
+        &:hover {
+            // Blitzy branding: Bright white on hover for contrast
+            color: #FFFFFF;
         }
     }
 }

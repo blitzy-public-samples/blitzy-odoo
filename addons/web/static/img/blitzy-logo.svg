@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Blitzy branding: Primary Blitzy logo for general use -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" width="200" height="50">
+  <defs>
+    <linearGradient id="blitzyGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="14%" style="stop-color:#7A6DEC"/>
+      <stop offset="63.32%" style="stop-color:#5B39F3"/>
+      <stop offset="86%" style="stop-color:#4101DB"/>
+    </linearGradient>
+  </defs>
+  <!-- Background shape -->
+  <rect x="2" y="10" width="30" height="30" rx="6" fill="url(#blitzyGradient)"/>
+  <!-- Lightning bolt icon -->
+  <path d="M22 18 L14 28 L18 28 L16 35 L24 25 L20 25 L22 18Z" fill="#94FAD5"/>
+  <!-- Text -->
+  <text x="42" y="34" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="22" font-weight="600" fill="#5B39F3">Blitzy</text>
+</svg>

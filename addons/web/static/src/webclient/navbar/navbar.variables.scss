@@ -1,17 +1,24 @@
 // = Main Navbar Variables
 // ============================================================================
+// Blitzy branding: This file has been modified to apply Blitzy visual branding.
+// Changes include: gradient background, accent mint text color, dark purple border.
+
 $o-navbar-height: 46px !default;
 $o-navbar-padding-v: 0px !default;
 $o-navbar-font-size: $o-font-size-base !default;
 
-$o-navbar-background: $o-brand-odoo !default;
-$o-navbar-border-bottom: 1px solid darken($o-brand-odoo, 10%) !default;
+// Blitzy branding: Primary gradient
+$o-navbar-background: linear-gradient(61deg, #7A6DEC 14%, #5B39F3 63.32%, #4101DB 86%) !default;
+// Blitzy branding: Dark purple border
+$o-navbar-border-bottom: 1px solid #4101DB !default;
 
 $o-navbar-entry-margin-h: 0 !default;
 $o-navbar-entry-padding-h: .63em !default;
 $o-navbar-entry-border-radius: 0 !default;
-$o-navbar-entry-color: rgba($o-white, .9) !default;
-$o-navbar-entry-color--hover: $o-white !default;
+// Blitzy branding: Accent mint text color
+$o-navbar-entry-color: #94FAD5 !default;
+// Blitzy branding: White on hover
+$o-navbar-entry-color--hover: #FFFFFF !default;
 $o-navbar-entry-font-size: 1em !default;
 $o-navbar-entry-bg--hover: rgba($o-black, .08) !default;
 
