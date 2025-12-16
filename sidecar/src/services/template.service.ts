@@ -90,11 +90,6 @@ const TEMPLATE_FILES: Record<ReportType, string> = {
  */
 const PARTIAL_FILES = ['header', 'footer', 'line-items'] as const;
 
-/**
- * Type representing valid partial names.
- */
-type PartialName = typeof PARTIAL_FILES[number];
-
 // =============================================================================
 // TEMPLATE SERVICE CLASS
 // =============================================================================
