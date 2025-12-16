@@ -58,47 +58,61 @@ const isDevelopment = config.nodeEnv === 'development';
  * logger.info({ reportType: 'invoice', recordId: 123 }, 'Processing document request');
  * ```
  */
-export const logger = pino({
-  // Set log level from configuration (defaults to 'info')
-  level: config.logLevel,
+/**
+ * Sensitive fields to redact from log output.
+ * Prevents accidental logging of authentication credentials.
+ */
+const redactPaths: string[] = [
+  // Redact Authorization headers (e.g., Bearer tokens)
+  'req.headers.authorization',
+  // Redact API key headers (case-insensitive access)
+  'req.headers["x-api-key"]',
+  'req.headers["X-API-Key"]',
+  // Redact HMAC signature headers
+  'req.headers["x-hmac-signature"]',
+  'req.headers["X-HMAC-Signature"]',
+];
 
-  // Use pretty printing in development for human-readable output,
-  // JSON output in production for machine parsing and log aggregation
-  transport: isDevelopment
-    ? {
-        target: 'pino-pretty',
-        options: {
-          // Enable colorized output for better readability in terminal
-          colorize: true,
-          // Format timestamps in local system time (e.g., "2024-01-15 10:30:45")
-          translateTime: 'SYS:standard',
-          // Omit pid and hostname to reduce noise in development logs
-          ignore: 'pid,hostname',
-        },
-      }
-    : undefined, // undefined = default JSON transport for production
+/**
+ * Base context included in all log entries for log aggregation and filtering.
+ */
+const baseContext = {
+  // Service identifier for multi-service log aggregation
+  service: 'document-sidecar',
+  // Service version for debugging and release tracking
+  version: '1.0.0',
+};
 
-  // Base context included in all log entries for log aggregation and filtering
-  base: {
-    // Service identifier for multi-service log aggregation
-    service: 'document-sidecar',
-    // Service version for debugging and release tracking
-    version: '1.0.0',
+/**
+ * Pino transport configuration for development mode.
+ * Uses pino-pretty for human-readable colored output.
+ */
+const devTransport: pino.TransportSingleOptions = {
+  target: 'pino-pretty',
+  options: {
+    // Enable colorized output for better readability in terminal
+    colorize: true,
+    // Format timestamps in local system time (e.g., "2024-01-15 10:30:45")
+    translateTime: 'SYS:standard',
+    // Omit pid and hostname to reduce noise in development logs
+    ignore: 'pid,hostname',
   },
+};
 
-  // Automatically redact sensitive fields from log output
-  // Prevents accidental logging of authentication credentials
-  redact: [
-    // Redact Authorization headers (e.g., Bearer tokens)
-    'req.headers.authorization',
-    // Redact API key headers (case-insensitive access)
-    'req.headers["x-api-key"]',
-    'req.headers["X-API-Key"]',
-    // Redact HMAC signature headers
-    'req.headers["x-hmac-signature"]',
-    'req.headers["X-HMAC-Signature"]',
-  ],
-});
+// Create logger with transport only in development mode
+// In production, JSON output is used (no transport means default JSON formatting)
+export const logger: pino.Logger = isDevelopment
+  ? pino({
+      level: config.logLevel,
+      base: baseContext,
+      redact: redactPaths,
+      transport: devTransport,
+    })
+  : pino({
+      level: config.logLevel,
+      base: baseContext,
+      redact: redactPaths,
+    });
 
 /**
  * Creates a child logger with request correlation ID for distributed tracing.
