@@ -1,0 +1,125 @@
+{{!--
+  Header Partial - Company Branding Section
+  
+  This shared partial renders the document header section for invoice, quote, and
+  delivery slip PDF documents. It implements company branding with logo display,
+  company name, full address, contact information, and VAT/Tax ID.
+  
+  This template mirrors the header structure from Odoo's external_layout QWeb
+  templates (web.external_layout_standard) for consistent company branding across
+  all PDF document types.
+  
+  Context Variables Expected:
+  - company.logo: Base64 encoded logo image (data:image/png;base64,...) or URL
+  - company.name: Company name string
+  - company.street: Street address line 1
+  - company.street2: Street address line 2 (optional)
+  - company.city: City name
+  - company.state: State/Province name (optional)
+  - company.zip: Postal/ZIP code
+  - company.country: Country name
+  - company.phone: Phone number (optional)
+  - company.email: Email address (optional)
+  - company.website: Website URL (optional)
+  - company.vat: VAT/Tax ID number (optional)
+  - company.vat_label: Custom label for VAT (e.g., "GST", "ABN", "Tax ID") (optional)
+  - company.company_registry: Company registration number (optional)
+  
+  CSS Classes Used:
+  - Bootstrap-like grid: row, col-6, col-12
+  - Text alignment: text-end
+  - Spacing: mb-0, mb-4, mt-1, mt-2, mt-3, me-3
+  - Typography: small, text-muted, fw-bold, d-block
+  - Custom: header-section, company-logo, company-info
+--}}
+<div class="header-section mb-4">
+  {{!-- Main Row: Logo on left, Company Info on right --}}
+  <div class="row">
+    {{!-- Company Logo Column --}}
+    <div class="col-6">
+      {{#if company.logo}}
+      <img src="{{company.logo}}" 
+           alt="{{company.name}}" 
+           class="company-logo"
+           style="max-height: 80px; max-width: 200px;"/>
+      {{else}}
+      {{!-- Fallback: Display company name as heading when no logo is available --}}
+      <h2 class="company-name mb-0">{{company.name}}</h2>
+      {{/if}}
+    </div>
+    
+    {{!-- Company Information Column --}}
+    <div class="col-6 text-end">
+      <div class="company-info">
+        {{!-- Show company name when logo is present (since logo is on left) --}}
+        {{#if company.logo}}
+        <strong class="d-block">{{company.name}}</strong>
+        {{/if}}
+        
+        {{!-- Street Address Line 1 --}}
+        {{#if company.street}}
+        <span class="d-block">{{company.street}}</span>
+        {{/if}}
+        
+        {{!-- Street Address Line 2 (optional) --}}
+        {{#if company.street2}}
+        <span class="d-block">{{company.street2}}</span>
+        {{/if}}
+        
+        {{!-- City, State, ZIP Line --}}
+        <span class="d-block">
+          {{#if company.city}}{{company.city}}{{#if company.state}}, {{/if}}{{/if}}{{#if company.state}}{{company.state}} {{/if}}{{#if company.zip}}{{company.zip}}{{/if}}
+        </span>
+        
+        {{!-- Country --}}
+        {{#if company.country}}
+        <span class="d-block">{{company.country}}</span>
+        {{/if}}
+      </div>
+    </div>
+  </div>
+  
+  {{!-- Contact Information Row --}}
+  <div class="row mt-2">
+    <div class="col-12 text-end small text-muted">
+      {{!-- Phone Number --}}
+      {{#if company.phone}}
+      <span class="me-3">Tel: {{company.phone}}</span>
+      {{/if}}
+      
+      {{!-- Email Address --}}
+      {{#if company.email}}
+      <span class="me-3">{{company.email}}</span>
+      {{/if}}
+      
+      {{!-- Website URL --}}
+      {{#if company.website}}
+      <span>{{company.website}}</span>
+      {{/if}}
+    </div>
+  </div>
+  
+  {{!-- VAT/Tax ID Row --}}
+  {{#if company.vat}}
+  <div class="row mt-1">
+    <div class="col-12 text-end small">
+      <span>
+        {{!-- Use custom VAT label if provided, otherwise default to "Tax ID" --}}
+        {{#if company.vat_label}}{{company.vat_label}}{{else}}Tax ID{{/if}}: <strong>{{company.vat}}</strong>
+      </span>
+    </div>
+  </div>
+  {{/if}}
+  
+  {{!-- Company Registry Number (optional) --}}
+  {{#if company.company_registry}}
+  <div class="row mt-1">
+    <div class="col-12 text-end small">
+      <span>Company Registry: <strong>{{company.company_registry}}</strong></span>
+    </div>
+  </div>
+  {{/if}}
+  
+  {{!-- Separator Line --}}
+  <hr class="mt-3 mb-4" style="border-top: 2px solid #dee2e6;"/>
+</div>
