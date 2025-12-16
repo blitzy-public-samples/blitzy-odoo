@@ -1,0 +1,114 @@
+{
+  "request_id": "550e8400-e29b-41d4-a716-446655440001",
+  "report_type": "invoice",
+  "record_ids": [1],
+  "data": {
+    "company": {
+      "name": "ACME Corporation",
+      "street": "123 Business Ave",
+      "street2": "Suite 500",
+      "city": "San Francisco",
+      "state": "CA",
+      "zip": "94102",
+      "country": "United States",
+      "vat": "US12-3456789",
+      "phone": "+1 (555) 123-4567",
+      "email": "info@acme-corp.example.com",
+      "website": "https://www.acme-corp.example.com",
+      "logo_url": "https://www.acme-corp.example.com/logo.png"
+    },
+    "partner": {
+      "name": "John Smith",
+      "company_name": "Smith Industries LLC",
+      "street": "456 Customer St",
+      "street2": "Building B",
+      "city": "Los Angeles",
+      "state": "CA",
+      "zip": "90001",
+      "country": "United States",
+      "vat": "US98-7654321",
+      "email": "john.smith@example.com",
+      "phone": "+1 (555) 987-6543"
+    },
+    "lines": [
+      {
+        "sequence": 1,
+        "product_name": "Widget Pro",
+        "description": "Professional-grade widget with extended warranty",
+        "quantity": 10,
+        "uom": "Units",
+        "unit_price": 49.99,
+        "discount": 0,
+        "tax_names": ["Tax 10%"],
+        "subtotal": 499.90
+      },
+      {
+        "sequence": 2,
+        "product_name": "Service Package",
+        "description": "Annual maintenance and support package including 24/7 technical assistance",
+        "quantity": 2,
+        "uom": "Units",
+        "unit_price": 299.00,
+        "discount": 0,
+        "tax_names": ["Tax 10%"],
+        "subtotal": 598.00
+      },
+      {
+        "sequence": 3,
+        "product_name": "Support Subscription",
+        "description": "Monthly premium support subscription with dedicated account manager",
+        "quantity": 1,
+        "uom": "Months",
+        "unit_price": 149.99,
+        "discount": 0,
+        "tax_names": ["Tax 10%"],
+        "subtotal": 149.99
+      },
+      {
+        "sequence": 4,
+        "product_name": "Premium Connector",
+        "description": "High-speed data connector for enterprise integration",
+        "quantity": 5,
+        "uom": "Units",
+        "unit_price": 24.99,
+        "discount": 10,
+        "tax_names": ["Tax 10%"],
+        "subtotal": 112.46
+      }
+    ],
+    "totals": {
+      "subtotal": 1360.35,
+      "discount_total": 12.49,
+      "tax_amount": 136.04,
+      "total": 1496.39,
+      "amount_due": 1496.39,
+      "amount_paid": 0.00,
+      "currency_symbol": "$",
+      "currency_code": "USD",
+      "tax_lines": [
+        {
+          "name": "Tax 10%",
+          "rate": 10.0,
+          "base": 1360.35,
+          "amount": 136.04
+        }
+      ]
+    },
+    "metadata": {
+      "number": "INV-2024-0001",
+      "date": "2024-01-15",
+      "due_date": "2024-02-14",
+      "origin": "SO-2024-0042",
+      "salesperson": "Jane Doe",
+      "payment_terms": "Net 30",
+      "payment_reference": "INV-2024-0001",
+      "notes": "Thank you for your business! Please remit payment within 30 days.",
+      "footer_notes": "All prices are in USD. Late payments may incur a 1.5% monthly fee."
+    }
+  },
+  "options": {
+    "page_size": "A4",
+    "language": "en_US",
+    "copies": 1
+  }
+}
