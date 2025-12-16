@@ -117,6 +117,7 @@ $o-opacities: (
 ) !default;
 
 // Font families
+// Blitzy branding: Inherits Inter font from $o-system-fonts
 $o-font-family-sans-serif: o-add-unicode-support-font($o-system-fonts) !default;
 $o-font-family-monospace: o-add-unicode-support-font((SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace)) !default;
 
