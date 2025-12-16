@@ -1,6 +1,36 @@
+# =============================================================================
+# Document Sidecar Service - Docker Compose Configuration
+# =============================================================================
+#
+# This Docker Compose file orchestrates the local development environment for
+# the Document Sidecar PDF generation service integrated with Odoo 17.
+#
+# Services:
+#   - sidecar: TypeScript/Fastify PDF generation service (port 3000)
+#   - odoo: Odoo 17 ERP server (port 8069)
+#   - db: PostgreSQL 15 database server
+#
+# Usage:
+#   1. Copy .env.example to .env and configure API_KEY and SECRET_KEY
+#   2. Run: docker-compose up -d
+#   3. Access Odoo at http://localhost:8069
+#   4. Sidecar health check: http://localhost:3000/health
+#
+# To rebuild after code changes:
+#   docker-compose up -d --build sidecar
+#
+# =============================================================================
+
 version: '3.8'
 
 services:
+  # ===========================================================================
+  # Document Sidecar Service
+  # ===========================================================================
+  # TypeScript-based PDF generation service using Puppeteer/Chromium.
+  # Handles invoice, quote, and delivery slip document rendering.
+  # Receives JSON payloads from Odoo and returns base64-encoded PDFs.
+  # ===========================================================================
   sidecar:
     build:
       context: ./sidecar
@@ -8,6 +38,10 @@ services:
     container_name: document-sidecar
     ports:
       - "3000:3000"
+    # Load environment variables from .env file
+    env_file:
+      - .env
+    # Override/default values (can be overridden by .env)
     environment:
       - PORT=3000
       - API_KEY=${API_KEY:-dev-api-key}
@@ -16,64 +50,126 @@ services:
       - NODE_ENV=${NODE_ENV:-development}
       - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
       - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60000}
+    # Health check using Node.js built-in HTTP module
+    # (curl not available in node:20-slim image)
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
       interval: 30s
       timeout: 10s
-      start_period: 5s
+      start_period: 10s
       retries: 3
     restart: unless-stopped
     networks:
       - odoo-network
+    # Resource limits for Puppeteer/Chromium
+    # Puppeteer requires significant memory for browser instances
     deploy:
       resources:
         limits:
           memory: 2G
+          cpus: '2'
         reservations:
           memory: 512M
+          cpus: '0.5'
 
+  # ===========================================================================
+  # Odoo 17 Server
+  # ===========================================================================
+  # Main Odoo ERP server with the document_sidecar_bridge addon mounted.
+  # The bridge addon intercepts supported report types and routes them to
+  # the sidecar service for PDF generation.
+  # ===========================================================================
   odoo:
     image: odoo:17
-    container_name: odoo
+    container_name: odoo-server
     depends_on:
       db:
         condition: service_healthy
+      sidecar:
+        condition: service_healthy
     ports:
       - "8069:8069"
+      - "8071:8071"  # Longpolling port for live chat/notifications
+      - "8072:8072"  # XML-RPC port (optional)
     volumes:
-      - ./addons:/mnt/extra-addons
+      # Mount custom addons including document_sidecar_bridge
+      - ./addons:/mnt/extra-addons:ro
+      # Persistent storage for Odoo filestore
       - odoo-data:/var/lib/odoo
+      # Optional: Mount custom configuration
+      # - ./odoo.conf:/etc/odoo/odoo.conf:ro
     environment:
+      # Database connection settings
       - HOST=db
       - USER=odoo
       - PASSWORD=odoo
+      # Additional addons path (includes our bridge module)
+      - ADDONS_PATH=/mnt/extra-addons
+      # Sidecar connection settings (for ir.config_parameter defaults)
+      - SIDECAR_URL=http://sidecar:3000
+      - SIDECAR_API_KEY=${API_KEY:-dev-api-key}
+      - SIDECAR_SECRET_KEY=${SECRET_KEY:-dev-secret-key}
     networks:
       - odoo-network
     restart: unless-stopped
 
+  # ===========================================================================
+  # PostgreSQL Database
+  # ===========================================================================
+  # PostgreSQL 15 database server for Odoo data storage.
+  # Data is persisted in a named volume for durability.
+  # ===========================================================================
   db:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: odoo-db
     environment:
+      # Database credentials
       - POSTGRES_DB=postgres
       - POSTGRES_USER=odoo
       - POSTGRES_PASSWORD=odoo
+      # Data directory location
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
+      # Persistent storage for database files
       - postgres-data:/var/lib/postgresql/data/pgdata
+    # Health check to ensure database is ready before Odoo starts
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks:
       - odoo-network
     restart: unless-stopped
+    # Resource constraints for development
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
+# =============================================================================
+# Networks
+# =============================================================================
+# Bridge network allows containers to communicate using service names.
+# The sidecar service is accessible from Odoo via http://sidecar:3000
+# =============================================================================
 networks:
   odoo-network:
     driver: bridge
+    name: odoo-sidecar-network
 
+# =============================================================================
+# Volumes
+# =============================================================================
+# Named volumes for persistent data storage across container restarts.
+# =============================================================================
 volumes:
+  # Odoo filestore (attachments, session files, etc.)
   odoo-data:
+    name: odoo-filestore-data
+  # PostgreSQL database files
   postgres-data:
+    name: odoo-postgres-data
