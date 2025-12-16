@@ -373,6 +373,8 @@ This module provides the core of the Odoo Web Client.
             ('remove', 'web/static/src/core/emoji_picker/emoji_data.js'), # always lazy-loaded
         ],
         'web._assets_primary_variables': [
+            # Blitzy branding: Brand token definitions loaded first to override defaults
+            'web/static/src/scss/_blitzy_variables.scss',
             'web/static/src/scss/primary_variables.scss',
             'web/static/src/**/*.variables.scss',
         ],
