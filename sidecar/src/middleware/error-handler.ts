@@ -219,7 +219,8 @@ function determineErrorCode(error: Error | FastifyError): ErrorCode {
  * });
  * ```
  */
-export function registerErrorHandler(app: FastifyInstance): void {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function registerErrorHandler(app: FastifyInstance<any, any, any, any>): void {
   app.setErrorHandler(
     (error: Error | FastifyError, request: FastifyRequest, reply: FastifyReply) => {
       // Extract request ID for correlation tracking

@@ -25,7 +25,8 @@
  * @see Agent Action Plan Sections 0.3.2, 0.5.1
  */
 
-import Fastify, { FastifyInstance, FastifyRequest } from 'fastify';
+import Fastify from 'fastify';
+import type { IncomingMessage } from 'http';
 import rateLimit from '@fastify/rate-limit';
 import { randomUUID } from 'crypto';
 
@@ -86,10 +87,9 @@ try {
  * and mocking in unit/integration tests.
  *
  * @constant
- * @type {FastifyInstance}
  * @exports app
  */
-export const app: FastifyInstance = Fastify({
+export const app = Fastify({
   // Use pre-configured Pino logger for structured logging
   // This integrates Fastify's internal logging with our application logger
   logger: logger,
@@ -101,7 +101,8 @@ export const app: FastifyInstance = Fastify({
   // Custom request ID generator function
   // Uses existing X-Request-ID header if present and non-empty,
   // otherwise generates a new RFC 4122 UUID v4
-  genReqId: (req: FastifyRequest): string => {
+  // Note: genReqId receives the raw IncomingMessage, not FastifyRequest
+  genReqId: (req: IncomingMessage): string => {
     const existingId = req.headers['x-request-id'];
     if (typeof existingId === 'string' && existingId.length > 0) {
       return existingId;
