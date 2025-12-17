@@ -32,7 +32,8 @@ import { templateService } from '../services/template.service.js';
 import { rendererService } from '../services/renderer.service.js';
 import { getPageCount } from '../services/pdf.service.js';
 import { encodeToBase64 } from '../utils/base64.js';
-import { logger, createRequestLogger } from '../utils/logger.js';
+import { createRequestLogger } from '../utils/logger.js';
+import type { BaseDocumentData } from '../contracts/domain.types.js';
 import {
   AppError,
   templateNotFoundError,
@@ -238,7 +239,9 @@ export async function renderHandler(
 
     // Render Handlebars template to HTML string
     // The template service handles template loading, caching, and partial registration
-    const html = await templateService.render(report_type, data, language);
+    // Cast data to BaseDocumentData - the Zod inferred type is structurally compatible
+    // but TypeScript strict mode requires explicit cast due to optional field handling
+    const html = await templateService.render(report_type, data as BaseDocumentData, language);
 
     // =========================================================================
     // Step 5: Generate PDF using Puppeteer via RendererService
