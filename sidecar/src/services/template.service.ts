@@ -331,6 +331,97 @@ export class TemplateService {
       }
     );
 
+    /**
+     * Calculate colspan for section rows in line items table.
+     * Base columns: Description, Quantity, Unit Price, Amount = 4
+     * Plus optional: Discount, Taxes
+     * @example {{calculateSectionColspan hasDiscount hasTaxes}} -> 4, 5, or 6
+     */
+    Handlebars.registerHelper(
+      'calculateSectionColspan',
+      (hasDiscount: boolean | undefined, hasTaxes: boolean | undefined): number => {
+        // Base columns: Description, Quantity, Unit Price, Amount
+        let colspan = 4;
+        if (hasDiscount) {
+          colspan += 1;
+        }
+        if (hasTaxes) {
+          colspan += 1;
+        }
+        return colspan;
+      }
+    );
+
+    /**
+     * Get document title based on invoice metadata (move_type, state, proforma).
+     * Returns appropriate title for Invoice, Credit Note, Vendor Bill, etc.
+     * @example {{getDocumentTitle data.metadata}} -> "Invoice" or "Draft Credit Note"
+     */
+    Handlebars.registerHelper(
+      'getDocumentTitle',
+      (metadata: Record<string, unknown> | undefined): string => {
+        if (!metadata) {
+          return 'Invoice';
+        }
+
+        const moveType = metadata.move_type as string | undefined;
+        const state = metadata.state as string | undefined;
+        const proforma = metadata.proforma as boolean | undefined;
+
+        // Default title if move_type is not set
+        if (!moveType) {
+          return 'Invoice';
+        }
+
+        // Build title based on move_type, state, and proforma flag
+        let title = '';
+
+        if (proforma) {
+          // Proforma documents
+          switch (moveType) {
+            case 'out_invoice':
+              title = state === 'draft' ? 'Draft Proforma Invoice' :
+                      state === 'cancel' ? 'Cancelled Proforma Invoice' : 'Proforma Invoice';
+              break;
+            case 'out_refund':
+              title = state === 'draft' ? 'Draft Proforma Credit Note' :
+                      state === 'cancel' ? 'Cancelled Proforma Credit Note' : 'Proforma Credit Note';
+              break;
+            case 'in_invoice':
+              title = 'Proforma Vendor Bill';
+              break;
+            case 'in_refund':
+              title = 'Proforma Vendor Credit Note';
+              break;
+            default:
+              title = 'Proforma Invoice';
+          }
+        } else {
+          // Regular documents
+          switch (moveType) {
+            case 'out_invoice':
+              title = state === 'draft' ? 'Draft Invoice' :
+                      state === 'cancel' ? 'Cancelled Invoice' : 'Invoice';
+              break;
+            case 'out_refund':
+              title = state === 'draft' ? 'Draft Credit Note' :
+                      state === 'cancel' ? 'Cancelled Credit Note' : 'Credit Note';
+              break;
+            case 'in_invoice':
+              title = 'Vendor Bill';
+              break;
+            case 'in_refund':
+              title = 'Vendor Credit Note';
+              break;
+            default:
+              title = 'Invoice';
+          }
+        }
+
+        return title;
+      }
+    );
+
     logger.debug('Handlebars helpers registered');
   }
 

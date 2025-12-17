@@ -330,9 +330,8 @@ describe('TemplateService', () => {
   // ===========================================================================
 
   describe('render', () => {
-    // NOTE: invoice.hbs template is not yet created (assigned to different agent)
-    // These tests are skipped until invoice.hbs is available
-    describe.skip('invoice template', () => {
+    // NOTE: invoice.hbs template has been created and is now available for testing
+    describe('invoice template', () => {
       it('should render invoice template with minimal data', async () => {
         const data = createMinimalDocumentData();
         const html = await service.render('invoice', data as never, 'en_US');
@@ -686,10 +685,9 @@ describe('TemplateService', () => {
   // ===========================================================================
 
   describe('data structure compatibility', () => {
-    // NOTE: invoice.hbs and quote.hbs templates not yet created (assigned to different agents)
-    // These tests are skipped until those templates are available
+    // NOTE: invoice.hbs is now available, quote.hbs is still being created by another agent
 
-    it.skip('should handle complete invoice fixture', async () => {
+    it('should handle complete invoice fixture', async () => {
       const data = await loadSampleInvoice();
       const html = await service.render('invoice', data as never, 'en_US');
 

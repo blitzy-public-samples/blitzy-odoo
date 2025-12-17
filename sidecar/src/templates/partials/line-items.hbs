@@ -172,7 +172,7 @@
     <tr name="tr_product">
       {{!-- Product/Service Name/Description --}}
       <td name="td_product_name" class="{{this.padding_class}}">
-        <span>{{this.name}}</span>
+        <span>{{#if this.product_name}}{{this.product_name}}{{else}}{{this.name}}{{/if}}</span>
       </td>
       
       {{!-- Quantity with Unit of Measure --}}
