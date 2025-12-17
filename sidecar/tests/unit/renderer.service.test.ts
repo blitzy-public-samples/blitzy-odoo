@@ -13,29 +13,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 // =============================================================================
-// MOCK SETUP - Must be before imports that use mocked modules
+// MOCK SETUP - Using vi.hoisted for proper mock hoisting
 // =============================================================================
 
 /**
- * Mock page object simulating Puppeteer Page interface.
- * All methods return resolved promises to simulate async behavior.
+ * Mock objects created using vi.hoisted to ensure they are available
+ * when vi.mock factory functions are executed (vi.mock is hoisted).
  */
-const mockPage = {
-  setViewport: vi.fn().mockResolvedValue(undefined),
-  setContent: vi.fn().mockResolvedValue(undefined),
-  pdf: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4 test content')),
-  close: vi.fn().mockResolvedValue(undefined),
-};
+const { mockPage, mockBrowser } = vi.hoisted(() => {
+  const mockPage = {
+    setViewport: vi.fn().mockResolvedValue(undefined),
+    setContent: vi.fn().mockResolvedValue(undefined),
+    pdf: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4 test content')),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
 
-/**
- * Mock browser object simulating Puppeteer Browser interface.
- * newPage returns the mock page, close resolves immediately.
- */
-const mockBrowser = {
-  newPage: vi.fn().mockResolvedValue(mockPage),
-  close: vi.fn().mockResolvedValue(undefined),
-  on: vi.fn(),
-};
+  const mockBrowser = {
+    newPage: vi.fn().mockResolvedValue(mockPage),
+    close: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+  };
+
+  return { mockPage, mockBrowser };
+});
 
 /**
  * Mock Puppeteer module to avoid actual browser instantiation.
