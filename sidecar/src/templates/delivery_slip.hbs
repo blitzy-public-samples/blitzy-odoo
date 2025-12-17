@@ -1,0 +1,360 @@
+{{!--
+  Delivery Slip Template
+  
+  Handlebars HTML template for delivery slip PDF document generation.
+  Replicates the structure and layout of Odoo's QWeb delivery slip report template
+  (stock.report_delivery_document) for visual consistency with native Odoo reports.
+  
+  This template is designed for shipping/logistics documents and intentionally
+  EXCLUDES PRICING INFORMATION per Section 0.8.5 of the Agent Action Plan.
+  
+  Document Features:
+  - Company header with logo and contact information (via header partial)
+  - Delivery/shipping address block
+  - Picking metadata (reference, origin, scheduled date, operator)
+  - Line items table showing products and quantities only (NO PRICING)
+  - Optional lot/serial number display for tracked products
+  - Notes section and recipient signature area (via footer partial)
+  
+  IMPORTANT NOTE (per Section 0.8.5):
+  =====================================
+  Delivery slips intentionally set unit_price and subtotal to 0 for all line items.
+  This is NOT a bug but intentional business logic:
+  - Delivery slips are shipping documents, not invoices
+  - Pricing information is confidential and not shown to warehouse/logistics staff
+  - Only quantities and product names are relevant for picking operations
+  
+  Context Variables Expected:
+  - data.company: Company information object (name, logo, address, contact)
+  - data.partner: Recipient/delivery address information
+  - data.metadata.name: Picking reference number (e.g., "WH/OUT/00001")
+  - data.metadata.origin: Source document (e.g., "SO-2024-001")
+  - data.metadata.scheduled_date: Scheduled delivery date
+  - data.metadata.date_done: Actual completion date (for done state)
+  - data.metadata.operator: Responsible operator/user name
+  - data.metadata.contact: Contact person (for internal transfers)
+  - data.metadata.picking_type: Type of picking ("outgoing", "incoming", "internal")
+  - data.lines: Array of line items
+  - data.lines[].product_name: Product name
+  - data.lines[].description: Product description (optional)
+  - data.lines[].quantity_ordered: Quantity ordered
+  - data.lines[].quantity_delivered: Quantity actually delivered
+  - data.lines[].uom: Unit of measure
+  - data.lines[].lot_serial: Lot/serial number (optional, for tracked products)
+  
+  CSS Dependencies (from pdf.css):
+  - Page layout: A4 portrait with print margins
+  - Bootstrap-like grid: .row, .col-3, .col-6, .col-7, .col-auto
+  - Tables: .table, .table-sm, .table-borderless
+  - Text alignment: .text-end, .text-start
+  - Spacing: .mb-2, .mb-3, .mb-4, .mt-2, .mt-4, .m-0
+  - Typography: .fw-bold, .text-muted, .small
+  - Display: .clearfix
+  - Page break control: .avoid-page-break-inside
+  
+  Partials Used:
+  - {{> header}}: Company branding header section
+  - {{> footer}}: Document footer with signature area
+  
+  @version 1.0.0
+  @author Document Sidecar Service
+  @see addons/stock/report/report_deliveryslip.xml (Odoo QWeb source)
+--}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>
+    {{!-- Dynamic title based on picking type --}}
+    {{#if (eq data.metadata.picking_type "incoming")}}Receipt{{else}}{{#if (eq data.metadata.picking_type "internal")}}Internal Transfer{{else}}Delivery Slip{{/if}}{{/if}} - {{data.metadata.name}}
+  </title>
+  <link rel="stylesheet" href="styles/pdf.css">
+</head>
+<body>
+  <div class="document delivery-slip">
+    
+    {{!-- ================================================================
+         COMPANY HEADER SECTION
+         Uses shared header partial for consistent company branding
+         across all document types (invoice, quote, delivery slip)
+         ================================================================ --}}
+    {{> header company=data.company}}
+    
+    {{!-- ================================================================
+         DELIVERY ADDRESS BLOCK
+         Shows recipient/shipping address for outgoing deliveries,
+         vendor address for incoming shipments, or warehouse address
+         as fallback. Mirrors Odoo's div_outgoing_address structure.
+         ================================================================ --}}
+    <div class="address-block row mb-4">
+      <div class="col-6">
+        {{!-- Delivery/Shipping Address --}}
+        <div class="delivery-address">
+          {{#if data.partner}}
+          {{#if data.partner.name}}
+          <strong class="d-block">{{data.partner.name}}</strong>
+          {{/if}}
+          {{#if data.partner.street}}
+          <span class="d-block">{{data.partner.street}}</span>
+          {{/if}}
+          {{#if data.partner.street2}}
+          <span class="d-block">{{data.partner.street2}}</span>
+          {{/if}}
+          <span class="d-block">
+            {{#if data.partner.city}}{{data.partner.city}}{{#if data.partner.state}}, {{/if}}{{/if}}{{#if data.partner.state}}{{data.partner.state}} {{/if}}{{#if data.partner.zip}}{{data.partner.zip}}{{/if}}
+          </span>
+          {{#if data.partner.country}}
+          <span class="d-block">{{data.partner.country}}</span>
+          {{/if}}
+          {{#if data.partner.phone}}
+          <span class="d-block mt-1">
+            <span class="text-muted">Tel:</span> {{data.partner.phone}}
+          </span>
+          {{/if}}
+          {{/if}}
+        </div>
+      </div>
+      
+      {{!-- Customer/Vendor Information Block (for commercial partner) --}}
+      <div class="col-6">
+        <div class="partner-info">
+          {{!-- Show address label based on picking type --}}
+          {{#if (eq data.metadata.picking_type "incoming")}}
+          {{#if data.partner}}
+          <strong class="d-block text-muted mb-1">Vendor Address</strong>
+          {{/if}}
+          {{else}}
+          {{#if (eq data.metadata.picking_type "outgoing")}}
+          {{#if data.partner}}
+          <strong class="d-block text-muted mb-1">Customer Address</strong>
+          {{/if}}
+          {{/if}}
+          {{/if}}
+        </div>
+      </div>
+    </div>
+    
+    {{!-- ================================================================
+         DOCUMENT TITLE
+         Dynamic title based on picking type:
+         - "Delivery Slip" for outgoing shipments
+         - "Receipt" for incoming shipments
+         - "Internal Transfer" for internal warehouse moves
+         Includes the picking reference number
+         ================================================================ --}}
+    <div class="document-title mb-4">
+      <h2 style="margin-top: 15px;">
+        {{!-- Document type label based on picking type --}}
+        <span class="document-type">
+          {{#if (eq data.metadata.picking_type "incoming")}}
+          Receipt
+          {{else}}
+          {{#if (eq data.metadata.picking_type "internal")}}
+          Internal Transfer
+          {{else}}
+          Delivery Slip
+          {{/if}}
+          {{/if}}
+        </span>
+        {{!-- Picking reference number --}}
+        <span class="document-number">{{data.metadata.name}}</span>
+      </h2>
+    </div>
+    
+    {{!-- ================================================================
+         PICKING METADATA SECTION
+         Displays key information about the delivery/picking:
+         - Order/Source: Origin document reference (e.g., "SO-2024-001")
+         - Contact: Partner contact (for internal transfers)
+         - Shipping Date: Scheduled or actual completion date
+         - Operator: Responsible warehouse operator
+         
+         Mirrors Odoo's #informations div with flexbox layout
+         ================================================================ --}}
+    <div id="informations" class="picking-metadata row mb-4 clearfix">
+      {{!-- Order/Source Reference --}}
+      {{#if data.metadata.origin}}
+      <div class="col col-3 mb-2">
+        <strong class="d-block">Order</strong>
+        <div class="m-0">{{data.metadata.origin}}</div>
+      </div>
+      {{/if}}
+      
+      {{!-- Contact (for internal transfers only) --}}
+      {{#if (eq data.metadata.picking_type "internal")}}
+      {{#if data.metadata.contact}}
+      <div class="col col-3 mb-2">
+        <strong class="d-block">Contact</strong>
+        <div class="m-0">{{data.metadata.contact}}</div>
+      </div>
+      {{/if}}
+      {{/if}}
+      
+      {{!-- Shipping/Scheduled Date --}}
+      <div class="col col-3 mb-2">
+        <strong class="d-block">Shipping Date</strong>
+        {{!-- Show date_done if picking is done, otherwise scheduled_date --}}
+        {{#if data.metadata.date_done}}
+        <div class="m-0">{{data.metadata.date_done}}</div>
+        {{else}}
+        {{#if data.metadata.scheduled_date}}
+        <div class="m-0">{{data.metadata.scheduled_date}}</div>
+        {{/if}}
+        {{/if}}
+      </div>
+      
+      {{!-- Operator/Responsible User --}}
+      {{#if data.metadata.operator}}
+      <div class="col-auto">
+        <strong class="d-block">Operator:</strong>
+        <p class="m-0">{{data.metadata.operator}}</p>
+      </div>
+      {{/if}}
+    </div>
+    
+    {{!-- ================================================================
+         LINE ITEMS TABLE - NO PRICING PER SECTION 0.8.5
+         
+         Displays products with quantities only:
+         - Product name and description
+         - Quantity ordered
+         - Quantity delivered
+         - Optional lot/serial number for tracked products
+         
+         IMPORTANT: This table intentionally excludes unit_price and
+         subtotal columns. Delivery slips are shipping documents for
+         warehouse/logistics staff who should not see pricing.
+         ================================================================ --}}
+    <div class="line-items-section mb-4">
+      <table class="table table-sm table-borderless">
+        <thead>
+          <tr>
+            <th name="th_sm_product"><strong>Product</strong></th>
+            {{!-- Show lot/serial column header if any line has lot_serial data --}}
+            {{#if hasLotSerial}}
+            <th name="th_lot_serial" class="text-end"><strong>Lot/Serial Number</strong></th>
+            {{/if}}
+            <th name="th_sm_ordered" class="text-end"><strong>Ordered</strong></th>
+            <th name="th_sm_quantity" class="text-end"><strong>Delivered</strong></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{!-- Iterate through all line items --}}
+          {{#each data.lines}}
+          <tr>
+            {{!-- Product Name and Description Column --}}
+            <td>
+              <span class="product-name">{{this.product_name}}</span>
+              {{!-- Show description if different from product name --}}
+              {{#if this.description}}
+              <p class="product-description text-muted small mb-0">
+                {{this.description}}
+              </p>
+              {{/if}}
+            </td>
+            
+            {{!-- Lot/Serial Number Column (optional) --}}
+            {{#if ../hasLotSerial}}
+            <td class="text-end">
+              {{#if this.lot_serial}}
+              <span class="lot-serial">{{this.lot_serial}}</span>
+              {{/if}}
+            </td>
+            {{/if}}
+            
+            {{!-- Quantity Ordered Column --}}
+            <td class="text-end">
+              <span class="quantity text-nowrap">{{this.quantity_ordered}}</span>
+              {{#if this.uom}}
+              <span class="uom">{{this.uom}}</span>
+              {{/if}}
+            </td>
+            
+            {{!-- Quantity Delivered Column --}}
+            <td class="text-end">
+              <span class="quantity text-nowrap">{{this.quantity_delivered}}</span>
+              {{#if this.uom}}
+              <span class="uom">{{this.uom}}</span>
+              {{/if}}
+            </td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+    
+    {{!-- ================================================================
+         BACKORDERS SECTION (Optional)
+         Shows remaining quantities not yet delivered if there are
+         backorder items. This section only appears when there are
+         items still pending delivery.
+         ================================================================ --}}
+    {{#if data.backorders}}
+    {{#if data.backorders.length}}
+    <div class="backorders-section mb-4">
+      <p class="mt-4 mb-2">
+        <span class="fw-bold">Remaining quantities not yet delivered:</span>
+      </p>
+      <table class="table table-sm table-borderless">
+        <thead>
+          <tr>
+            <th name="th_sb_product"><strong>Product</strong></th>
+            <th></th>
+            <th name="th_sb_quantity" class="text-end"><strong>Quantity</strong></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each data.backorders}}
+          <tr>
+            <td class="w-auto">
+              <span>{{this.product_name}}</span>
+              {{#if this.description}}
+              <p class="text-muted small mb-0">{{this.description}}</p>
+              {{/if}}
+            </td>
+            <td></td>
+            <td class="text-end w-auto">
+              <span>{{this.quantity}}</span>
+              {{#if this.uom}}
+              <span>{{this.uom}}</span>
+              {{/if}}
+            </td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+    {{/if}}
+    {{/if}}
+    
+    {{!-- ================================================================
+         NOTES SECTION
+         Displays any additional notes or special instructions
+         for the delivery/shipment
+         ================================================================ --}}
+    {{#if data.metadata.notes}}
+    <div class="notes-section mb-4">
+      <strong class="d-block mb-2">Notes</strong>
+      <div class="notes-content text-muted" style="text-align:justify;text-justify:inter-word;">
+        {{data.metadata.notes}}
+      </div>
+    </div>
+    {{/if}}
+    
+    {{!-- ================================================================
+         SIGNATURE SECTION
+         Provides space for recipient signature confirmation.
+         Uses footer partial with showSignature and showRecipientSignature
+         flags enabled for delivery slip documents.
+         ================================================================ --}}
+    {{> footer 
+        notes=data.metadata.delivery_notes
+        showSignature=true
+        showRecipientSignature=true
+        companyName=data.company.name
+    }}
+    
+  </div>
+</body>
+</html>
