@@ -188,10 +188,12 @@ export async function renderHandler(
 
     // Throw AppError with VALIDATION_ERROR code and structured details
     // The error handler will format this into a proper ErrorResponse
+    // Include Zod error code for client debugging (per error handler mapZodErrorToDetails pattern)
     throw new AppError('VALIDATION_ERROR', 'Invalid request payload', {
       issues: parseResult.error.issues.map((issue) => ({
         path: issue.path.join('.'),
         message: issue.message,
+        code: issue.code,
       })),
     });
   }

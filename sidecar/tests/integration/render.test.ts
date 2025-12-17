@@ -11,11 +11,54 @@
  *
  * Uses Vitest framework with beforeAll/afterAll hooks for server lifecycle management.
  *
+ * IMPORTANT: vi.mock() must be called before any module imports to properly
+ * intercept the config module. Vitest hoists vi.mock() calls automatically.
+ *
  * @module tests/integration/render.test
  * @see Agent Action Plan Section 0.3.1 - Test specifications
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+// =============================================================================
+// VITEST IMPORTS AND CONFIG MODULE MOCK
+// =============================================================================
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+
+/**
+ * Mock the config module to provide test-specific configuration values.
+ * This mock is hoisted by Vitest and runs before any imports, ensuring
+ * all modules that depend on config receive the mocked values.
+ *
+ * IMPORTANT: Values MUST be inline literals, not constants, because vi.mock()
+ * is hoisted to the very top of the file before any variable declarations.
+ */
+vi.mock('../../src/config.js', () => ({
+  config: {
+    port: 3000,
+    apiKey: 'test-api-key-integration-12345',
+    secretKey: 'test-secret-key-integration-67890',
+    logLevel: 'silent',
+    nodeEnv: 'test',
+    rateLimitMax: 1000,
+    rateLimitWindow: 60000,
+  },
+}));
+
+// =============================================================================
+// TEST CONFIGURATION CONSTANTS
+// =============================================================================
+/**
+ * Test API key for authentication (must match vi.mock values above).
+ */
+const TEST_API_KEY = 'test-api-key-integration-12345';
+
+/**
+ * Test secret key for HMAC signature generation (must match vi.mock values above).
+ */
+const TEST_SECRET_KEY = 'test-secret-key-integration-67890';
+
+// =============================================================================
+// MODULE IMPORTS (AFTER CONFIG MOCK)
+// =============================================================================
 import Fastify, { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import { generateSignature } from '../../src/utils/hmac.js';
@@ -26,20 +69,8 @@ import { registerErrorHandler } from '../../src/middleware/error-handler.js';
 import { requestIdMiddleware } from '../../src/middleware/request-id.js';
 
 // =============================================================================
-// TEST CONFIGURATION CONSTANTS
+// TEST CONFIGURATION CONSTANTS (API/SECRET keys defined at top before imports)
 // =============================================================================
-
-/**
- * Test API key for authentication.
- * Must be set in environment before server starts.
- */
-const TEST_API_KEY = 'test-api-key-integration-12345';
-
-/**
- * Test secret key for HMAC signature generation.
- * Must be set in environment before server starts.
- */
-const TEST_SECRET_KEY = 'test-secret-key-integration-67890';
 
 /**
  * Render endpoint path constant for test requests.
@@ -357,18 +388,10 @@ let app: FastifyInstance;
 /**
  * Setup the Fastify application instance before all tests.
  *
- * Configures environment variables, registers middleware and routes,
- * and waits for the application to be ready.
+ * Creates Fastify app with middleware and routes registered.
+ * Config values are provided via vi.mock() above.
  */
 beforeAll(async () => {
-  // Set up test environment variables
-  process.env.API_KEY = TEST_API_KEY;
-  process.env.SECRET_KEY = TEST_SECRET_KEY;
-  process.env.NODE_ENV = 'test';
-  process.env.LOG_LEVEL = 'silent'; // Suppress logs during tests
-  process.env.RATE_LIMIT_MAX = '1000'; // High limit to avoid rate limiting in tests
-  process.env.RATE_LIMIT_WINDOW = '60000';
-
   // Create Fastify instance with minimal logging for tests
   app = Fastify({
     logger: false,
@@ -1226,7 +1249,8 @@ describe('Health Endpoints', () => {
     expect(response.statusCode).toBe(200);
 
     const body = response.json();
-    expect(body.status).toBe('ok');
+    // Health handler returns 'healthy' or 'unhealthy' status
+    expect(body.status).toBe('healthy');
     expect(body.service).toBeDefined();
     expect(body.timestamp).toBeDefined();
   });
@@ -1248,7 +1272,8 @@ describe('Health Endpoints', () => {
 
     const body = response.json();
     expect(body.status).toBeDefined();
-    expect(['ok', 'error']).toContain(body.status);
+    // Ready handler returns 'healthy' or 'unhealthy' status
+    expect(['healthy', 'unhealthy']).toContain(body.status);
   });
 
   /**
