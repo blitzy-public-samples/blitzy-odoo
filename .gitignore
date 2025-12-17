@@ -48,6 +48,9 @@ package.json
 !sidecar/package-lock.json
 !sidecar/tsconfig.json
 
+# Sidecar build output
+sidecar/dist/
+
 # Python virtual environment
 venv/
 
