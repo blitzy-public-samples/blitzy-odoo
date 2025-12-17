@@ -476,6 +476,7 @@ class SidecarClient:
         partner = picking.partner_id  # Delivery contact/address
 
         # Serialize stock moves (line items)
+        # Field names must match what the Handlebars template expects
         lines = []
         for move in picking.move_ids:
             if move.state == 'cancel':
@@ -485,37 +486,60 @@ class SidecarClient:
             # as these documents show quantities only, not pricing information.
             # This is standard business practice for shipping/logistics documents.
             lines.append({
-                'product': move.product_id.name if move.product_id else '',
+                'product_name': move.product_id.name if move.product_id else '',
                 'product_code': move.product_id.default_code if move.product_id else '',
-                'description': move.description_picking or move.product_id.name if move.product_id else '',
+                'description': move.description_picking or '',
                 'quantity': self._format_monetary(move.product_uom_qty),
-                'quantity_done': self._format_monetary(move.quantity if hasattr(move, 'quantity') else move.product_uom_qty),
-                'unit_of_measure': move.product_uom.name if move.product_uom else '',
+                'quantity_ordered': self._format_monetary(move.product_uom_qty),
+                'quantity_delivered': self._format_monetary(move.quantity if hasattr(move, 'quantity') else move.product_uom_qty),
+                'uom': move.product_uom.name if move.product_uom else '',
                 'unit_price': 0.0,  # Intentionally 0 - delivery slips don't show pricing
                 'subtotal': 0.0,  # Intentionally 0 - delivery slips don't show pricing
+                'lot_serial': '',  # Lot/serial tracking - populated when applicable
             })
 
         # Get delivery address
         delivery_address = self._get_partner_address(partner)
+
+        # Determine picking type code for template conditional rendering
+        # Map Odoo picking type to template-expected values
+        picking_type_code = 'outgoing'  # default
+        if picking.picking_type_id:
+            picking_type = picking.picking_type_id.code or ''
+            if picking_type == 'incoming':
+                picking_type_code = 'incoming'
+            elif picking_type == 'internal':
+                picking_type_code = 'internal'
+            else:
+                picking_type_code = 'outgoing'
 
         return {
             'company': self._get_company_info(company),
             'delivery_address': delivery_address,
             'partner': {
                 'name': partner.name if partner else '',
-                'address': delivery_address,
+                'street': partner.street if partner else '',
+                'street2': partner.street2 if partner else '',
+                'city': partner.city if partner else '',
+                'state': partner.state_id.name if partner and partner.state_id else '',
+                'zip': partner.zip if partner else '',
+                'country': partner.country_id.name if partner and partner.country_id else '',
                 'phone': partner.phone if partner else '',
                 'email': partner.email if partner else '',
             },
-            'picking_metadata': {
-                'reference': picking.name or '',
-                'scheduled_date': self._format_datetime(picking.scheduled_date),
-                'origin': picking.origin or '',
-                'state': picking.state or '',
-                'picking_type': picking.picking_type_id.name if picking.picking_type_id else '',
-            },
             'lines': lines,
+            # All metadata fields expected by the delivery_slip.hbs template
+            # must be in the 'metadata' object, not 'picking_metadata'
             'metadata': {
+                'name': picking.name or '',  # Template uses data.metadata.name
+                'number': picking.name or '',  # Alias for compatibility
+                'origin': picking.origin or '',  # Template uses data.metadata.origin
+                'scheduled_date': self._format_datetime(picking.scheduled_date),
+                'date_done': self._format_datetime(picking.date_done) if hasattr(picking, 'date_done') else None,
+                'state': picking.state or '',
+                'picking_type': picking_type_code,  # Template uses data.metadata.picking_type
+                'operator': picking.user_id.name if picking.user_id else '',
+                'contact': picking.partner_id.name if picking.partner_id else '',
                 'notes': picking.note or '' if hasattr(picking, 'note') else '',
             },
         }

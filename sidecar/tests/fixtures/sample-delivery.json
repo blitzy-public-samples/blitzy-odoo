@@ -31,40 +31,52 @@
         "product_name": "Widget Pro",
         "description": "Professional grade widget - Model WP-2000",
         "quantity": 10,
+        "quantity_ordered": 10,
+        "quantity_delivered": 10,
         "uom": "Units",
         "unit_price": 0,
         "discount": 0,
-        "subtotal": 0
+        "subtotal": 0,
+        "lot_serial": ""
       },
       {
         "sequence": 2,
         "product_name": "Connector Kit",
         "description": "Universal connector kit with adapters",
         "quantity": 5,
+        "quantity_ordered": 5,
+        "quantity_delivered": 5,
         "uom": "Kits",
         "unit_price": 0,
         "discount": 0,
-        "subtotal": 0
+        "subtotal": 0,
+        "lot_serial": ""
       },
       {
         "sequence": 3,
         "product_name": "Industrial Cable - 50ft",
         "description": "Heavy-duty shielded industrial cable",
         "quantity": 20,
+        "quantity_ordered": 20,
+        "quantity_delivered": 20,
         "uom": "Units",
         "unit_price": 0,
         "discount": 0,
-        "subtotal": 0
+        "subtotal": 0,
+        "lot_serial": ""
       },
       {
         "sequence": 4,
         "product_name": "Mounting Brackets Set",
         "description": "Stainless steel mounting brackets - Pack of 4",
         "quantity": 8,
+        "quantity_ordered": 8,
+        "quantity_delivered": 8,
         "uom": "Sets",
         "unit_price": 0,
         "discount": 0,
-        "subtotal": 0
+        "subtotal": 0,
+        "lot_serial": ""
       }
     ],
     "totals": {
@@ -74,11 +86,14 @@
       "currency_symbol": "$"
     },
     "metadata": {
+      "name": "WH/OUT/00042",
       "number": "WH/OUT/00042",
       "date": "2024-01-22",
+      "origin": "SO-2024-0042",
       "reference": "SO-2024-0042",
       "notes": "Please sign for receipt. Handle with care - fragile items included. Contact warehouse supervisor at ext. 234 for any discrepancies.",
       "scheduled_date": "2024-01-25",
+      "picking_type": "outgoing",
       "carrier": "FedEx Ground",
       "tracking_reference": "794644790278"
     }

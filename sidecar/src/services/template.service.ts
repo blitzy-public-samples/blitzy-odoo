@@ -536,9 +536,12 @@ export class TemplateService {
     const css = await this.loadStyles();
 
     // Prepare template context with all necessary data
+    // NOTE: Templates expect data to be nested under a 'data' key
+    // e.g., {{data.company.name}}, {{data.metadata.number}}
+    // This matches the JSON fixture structure: { request_id, report_type, data: {...} }
     const context = {
-      // Spread all business data
-      ...data,
+      // Keep business data nested under 'data' key as templates expect
+      data,
       // Include CSS for inline styling in HTML
       css,
       // Language code (for future i18n support)
