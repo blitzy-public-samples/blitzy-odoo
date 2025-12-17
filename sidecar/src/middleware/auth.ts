@@ -21,7 +21,7 @@
  * @module middleware/auth
  */
 
-import type { FastifyRequest, FastifyReply, preHandlerHookHandler } from 'fastify';
+import type { FastifyRequest, FastifyReply, preHandlerAsyncHookHandler } from 'fastify';
 import { config } from '../config.js';
 import { verifySignature } from '../utils/hmac.js';
 import { logger } from '../utils/logger.js';
@@ -186,37 +186,16 @@ export function shouldSkipAuth(url: string): boolean {
 }
 
 /**
- * Fastify preHandler hook that validates authentication for protected routes.
+ * Core authentication logic that performs API key and HMAC validation.
  *
- * Authentication is performed in two stages:
- * 1. API Key Validation: Checks X-API-Key header against configured API_KEY
- * 2. HMAC Signature Validation: For POST/PUT/PATCH requests, verifies
- *    X-HMAC-Signature header using HMAC-SHA256 of the request body with
- *    the configured SECRET_KEY
- *
- * Both validations must pass for the request to proceed. On failure,
- * throws AppError with AUTH_FAILED code resulting in HTTP 401 response.
- *
- * Uses constant-time comparison to prevent timing attacks that could
- * reveal information about valid API keys or signatures.
+ * This internal function encapsulates the authentication process and is
+ * called by both authMiddleware and conditionalAuthMiddleware.
  *
  * @param request - Fastify request object with headers, body, and metadata
- * @param reply - Fastify reply object (unused but required by hook signature)
  * @throws {AppError} With AUTH_FAILED code on authentication failure
- *
- * @example
- * ```typescript
- * // Register as global preHandler hook
- * app.addHook('preHandler', authMiddleware);
- *
- * // Or apply to specific routes
- * app.post('/api/v1/render', { preHandler: authMiddleware }, renderHandler);
- * ```
+ * @internal
  */
-export const authMiddleware: preHandlerHookHandler = async (
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> => {
+async function performAuthentication(request: FastifyRequest): Promise<void> {
   // Get request ID for correlation in logs
   // requestId is typically set by the request-id middleware
   const requestId = (request.id ?? request.headers['x-request-id'] ?? 'unknown') as string;
@@ -278,6 +257,41 @@ export const authMiddleware: preHandlerHookHandler = async (
     },
     'Authentication successful'
   );
+}
+
+/**
+ * Fastify preHandler hook that validates authentication for protected routes.
+ *
+ * Authentication is performed in two stages:
+ * 1. API Key Validation: Checks X-API-Key header against configured API_KEY
+ * 2. HMAC Signature Validation: For POST/PUT/PATCH requests, verifies
+ *    X-HMAC-Signature header using HMAC-SHA256 of the request body with
+ *    the configured SECRET_KEY
+ *
+ * Both validations must pass for the request to proceed. On failure,
+ * throws AppError with AUTH_FAILED code resulting in HTTP 401 response.
+ *
+ * Uses constant-time comparison to prevent timing attacks that could
+ * reveal information about valid API keys or signatures.
+ *
+ * @param request - Fastify request object with headers, body, and metadata
+ * @param _reply - Fastify reply object (unused but required by hook signature)
+ * @throws {AppError} With AUTH_FAILED code on authentication failure
+ *
+ * @example
+ * ```typescript
+ * // Register as global preHandler hook
+ * app.addHook('preHandler', authMiddleware);
+ *
+ * // Or apply to specific routes
+ * app.post('/api/v1/render', { preHandler: authMiddleware }, renderHandler);
+ * ```
+ */
+export const authMiddleware: preHandlerAsyncHookHandler = async (
+  request: FastifyRequest,
+  _reply: FastifyReply
+): Promise<void> => {
+  await performAuthentication(request);
 };
 
 /**
@@ -303,9 +317,9 @@ export const authMiddleware: preHandlerHookHandler = async (
  * // All other routes require valid API key and HMAC signature
  * ```
  */
-export const conditionalAuthMiddleware: preHandlerHookHandler = async (
+export const conditionalAuthMiddleware: preHandlerAsyncHookHandler = async (
   request: FastifyRequest,
-  reply: FastifyReply
+  _reply: FastifyReply
 ): Promise<void> => {
   // Check if this route should skip authentication
   if (shouldSkipAuth(request.url)) {
@@ -323,6 +337,6 @@ export const conditionalAuthMiddleware: preHandlerHookHandler = async (
     return;
   }
 
-  // Delegate to main authentication middleware for protected routes
-  return authMiddleware(request, reply);
+  // Delegate to core authentication logic for protected routes
+  await performAuthentication(request);
 };
