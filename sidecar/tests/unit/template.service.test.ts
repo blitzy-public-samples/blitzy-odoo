@@ -26,8 +26,13 @@ import type { BaseDocumentData } from '../../src/contracts/domain.types.js';
 /**
  * Mock for fs/promises module.
  * Controls template file loading behavior in tests.
+ * Using vi.hoisted() to ensure the mock is available before hoisting.
  */
-const mockReadFile = vi.fn();
+const { mockReadFile } = vi.hoisted(() => {
+  return {
+    mockReadFile: vi.fn(),
+  };
+});
 
 vi.mock('fs/promises', () => ({
   readFile: mockReadFile,
