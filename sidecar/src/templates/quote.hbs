@@ -7,7 +7,7 @@
   
   Template Features:
   - Company header with branding via {{> header}} partial
-  - Customer billing and shipping address blocks
+  - Customer billing and shipping address blocks (constructed from individual address fields)
   - Dynamic document title based on state (Quotation/Order/Pro-Forma Invoice)
   - Quote metadata section (reference, dates, salesperson)
   - Line items table via {{> line-items}} partial with full pricing support
@@ -15,20 +15,35 @@
   - Electronic signature display (when available)
   - Footer with notes, payment terms, and terms & conditions via {{> footer}} partial
   
-  Data Context Expected:
-  - data.company: Company information object
-  - data.partner: Main customer/partner information
-  - data.partner_invoice: Invoicing address (when different)
-  - data.partner_shipping: Shipping address (when different)
-  - data.metadata: Document metadata (name, state, dates, etc.)
-  - data.lines: Array of line items
-  - data.totals: Subtotal, taxes array, and total
+  Data Context Expected (aligned with domain.types.ts):
+  - data.company: Company information object (name, street, city, etc.)
+  - data.partner: Main customer/partner information (name, street, street2, city, state, zip, country, vat, phone, email)
+  - data.partner_invoice: Invoicing address (optional, uses same structure as partner)
+  - data.partner_shipping: Shipping address (optional, uses same structure as partner)
+  - data.metadata: Document metadata object:
+    - metadata.number: Document number (e.g., "SO-2024-001")
+    - metadata.date: Document date (ISO 8601 format)
+    - metadata.reference: Customer reference (e.g., customer PO number)
+    - metadata.salesperson: Salesperson name
+    - metadata.notes: Document notes
+    - metadata.terms_and_conditions: Terms text
+  - data.lines: Array of line items (LineItem[])
+  - data.totals: Totals object:
+    - totals.subtotal: Amount before tax
+    - totals.tax_amount: Total tax
+    - totals.total: Grand total
+    - totals.currency_symbol: Currency symbol
+    - totals.tax_lines: Array of tax breakdown (TaxLine[])
+  - data.state: Document state (optional - draft/sent/proforma/sale/done, defaults to Quotation)
+  - data.validity_date: Quote expiration date (optional, top-level per QuoteData)
+  - data.client_order_ref: Customer order reference (optional, top-level per QuoteData)
+  - data.commitment_date: Delivery commitment date (optional)
   - data.signature: Base64 encoded signature image (optional)
   - data.signed_by: Name of person who signed (optional)
   - data.notes: Document notes text
-  - data.payment_terms: Payment terms information
+  - data.payment_terms: Payment terms object with note property
   - data.fiscal_position_note: Fiscal position remarks
-  - currency: Currency object with symbol and position
+  - currency: Currency object with symbol and position (computed from totals)
   - hasDiscount: Boolean flag if any line has discount
   - hasTaxes: Boolean flag if any line has taxes
   
@@ -37,7 +52,7 @@
   - Styles: pdf.css
   - Helpers: formatCurrency, formatDate, eq
   
-  @version 1.0.0
+  @version 1.0.1
   @author Document Sidecar Service
 --}}
 <!DOCTYPE html>
@@ -46,8 +61,8 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>
-    {{!-- Dynamic title based on document state --}}
-    {{#if (eq data.metadata.state "draft")}}Quotation{{else if (eq data.metadata.state "sent")}}Quotation{{else if (eq data.metadata.state "proforma")}}Pro-Forma Invoice{{else}}Sales Order{{/if}} - {{data.metadata.name}}
+    {{!-- Dynamic title based on document state (state is optional, defaults to Quotation) --}}
+    {{#if (eq data.state "draft")}}Quotation{{else if (eq data.state "sent")}}Quotation{{else if (eq data.state "proforma")}}Pro-Forma Invoice{{else if (eq data.state "sale")}}Sales Order{{else if (eq data.state "done")}}Sales Order{{else}}Quotation{{/if}} - {{data.metadata.number}}
   </title>
   {{!-- Link to print-optimized PDF stylesheet --}}
   <link rel="stylesheet" href="styles/pdf.css"/>
@@ -77,9 +92,20 @@
           <strong class="d-block">{{data.partner.name}}</strong>
           {{/if}}
           
-          {{!-- Partner Full Address --}}
-          {{#if data.partner.address}}
-          <span class="d-block">{{data.partner.address}}</span>
+          {{!-- Partner Full Address (constructed from individual fields) --}}
+          {{#if data.partner.street}}
+          <span class="d-block">{{data.partner.street}}</span>
+          {{/if}}
+          {{#if data.partner.street2}}
+          <span class="d-block">{{data.partner.street2}}</span>
+          {{/if}}
+          {{#if data.partner.city}}
+          <span class="d-block">
+            {{data.partner.city}}{{#if data.partner.state}}, {{data.partner.state}}{{/if}}{{#if data.partner.zip}} {{data.partner.zip}}{{/if}}
+          </span>
+          {{/if}}
+          {{#if data.partner.country}}
+          <span class="d-block">{{data.partner.country}}</span>
           {{/if}}
           
           {{!-- Partner VAT/Tax ID --}}
@@ -96,48 +122,55 @@
         {{!-- Show alternative addresses when different from main partner --}}
         {{#if data.partner_invoice}}
           {{#if data.partner_shipping}}
-            {{!-- Both invoice and shipping are different --}}
-            {{#if (eq data.partner_invoice.address data.partner_shipping.address)}}
-              {{!-- Invoice and shipping are the same but different from partner --}}
-              <div class="invoice-shipping-address">
-                <strong class="d-block">Invoicing and Shipping Address</strong>
-                {{#if data.partner_invoice.name}}
-                <span class="d-block">{{data.partner_invoice.name}}</span>
-                {{/if}}
-                {{#if data.partner_invoice.address}}
-                <span class="d-block">{{data.partner_invoice.address}}</span>
-                {{/if}}
-                {{#if data.partner_invoice.phone}}
-                <span class="d-block">Tel: {{data.partner_invoice.phone}}</span>
-                {{/if}}
-              </div>
-            {{else}}
-              {{!-- Invoice and shipping are different --}}
-              <div class="invoice-address mb-3">
-                <strong class="d-block">Invoicing Address</strong>
-                {{#if data.partner_invoice.name}}
-                <span class="d-block">{{data.partner_invoice.name}}</span>
-                {{/if}}
-                {{#if data.partner_invoice.address}}
-                <span class="d-block">{{data.partner_invoice.address}}</span>
-                {{/if}}
-                {{#if data.partner_invoice.phone}}
-                <span class="d-block">Tel: {{data.partner_invoice.phone}}</span>
-                {{/if}}
-              </div>
-              <div class="shipping-address mt-3">
-                <strong class="d-block">Shipping Address</strong>
-                {{#if data.partner_shipping.name}}
-                <span class="d-block">{{data.partner_shipping.name}}</span>
-                {{/if}}
-                {{#if data.partner_shipping.address}}
-                <span class="d-block">{{data.partner_shipping.address}}</span>
-                {{/if}}
-                {{#if data.partner_shipping.phone}}
-                <span class="d-block">Tel: {{data.partner_shipping.phone}}</span>
-                {{/if}}
-              </div>
-            {{/if}}
+            {{!-- Both invoice and shipping addresses exist --}}
+            {{!-- Invoice Address --}}
+            <div class="invoice-address mb-3">
+              <strong class="d-block">Invoicing Address</strong>
+              {{#if data.partner_invoice.name}}
+              <span class="d-block">{{data.partner_invoice.name}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.street}}
+              <span class="d-block">{{data.partner_invoice.street}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.street2}}
+              <span class="d-block">{{data.partner_invoice.street2}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.city}}
+              <span class="d-block">
+                {{data.partner_invoice.city}}{{#if data.partner_invoice.state}}, {{data.partner_invoice.state}}{{/if}}{{#if data.partner_invoice.zip}} {{data.partner_invoice.zip}}{{/if}}
+              </span>
+              {{/if}}
+              {{#if data.partner_invoice.country}}
+              <span class="d-block">{{data.partner_invoice.country}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.phone}}
+              <span class="d-block">Tel: {{data.partner_invoice.phone}}</span>
+              {{/if}}
+            </div>
+            {{!-- Shipping Address --}}
+            <div class="shipping-address mt-3">
+              <strong class="d-block">Shipping Address</strong>
+              {{#if data.partner_shipping.name}}
+              <span class="d-block">{{data.partner_shipping.name}}</span>
+              {{/if}}
+              {{#if data.partner_shipping.street}}
+              <span class="d-block">{{data.partner_shipping.street}}</span>
+              {{/if}}
+              {{#if data.partner_shipping.street2}}
+              <span class="d-block">{{data.partner_shipping.street2}}</span>
+              {{/if}}
+              {{#if data.partner_shipping.city}}
+              <span class="d-block">
+                {{data.partner_shipping.city}}{{#if data.partner_shipping.state}}, {{data.partner_shipping.state}}{{/if}}{{#if data.partner_shipping.zip}} {{data.partner_shipping.zip}}{{/if}}
+              </span>
+              {{/if}}
+              {{#if data.partner_shipping.country}}
+              <span class="d-block">{{data.partner_shipping.country}}</span>
+              {{/if}}
+              {{#if data.partner_shipping.phone}}
+              <span class="d-block">Tel: {{data.partner_shipping.phone}}</span>
+              {{/if}}
+            </div>
           {{else}}
             {{!-- Only invoice address is different --}}
             <div class="invoice-address">
@@ -145,8 +178,19 @@
               {{#if data.partner_invoice.name}}
               <span class="d-block">{{data.partner_invoice.name}}</span>
               {{/if}}
-              {{#if data.partner_invoice.address}}
-              <span class="d-block">{{data.partner_invoice.address}}</span>
+              {{#if data.partner_invoice.street}}
+              <span class="d-block">{{data.partner_invoice.street}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.street2}}
+              <span class="d-block">{{data.partner_invoice.street2}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.city}}
+              <span class="d-block">
+                {{data.partner_invoice.city}}{{#if data.partner_invoice.state}}, {{data.partner_invoice.state}}{{/if}}{{#if data.partner_invoice.zip}} {{data.partner_invoice.zip}}{{/if}}
+              </span>
+              {{/if}}
+              {{#if data.partner_invoice.country}}
+              <span class="d-block">{{data.partner_invoice.country}}</span>
               {{/if}}
               {{#if data.partner_invoice.phone}}
               <span class="d-block">Tel: {{data.partner_invoice.phone}}</span>
@@ -160,8 +204,19 @@
             {{#if data.partner_shipping.name}}
             <span class="d-block">{{data.partner_shipping.name}}</span>
             {{/if}}
-            {{#if data.partner_shipping.address}}
-            <span class="d-block">{{data.partner_shipping.address}}</span>
+            {{#if data.partner_shipping.street}}
+            <span class="d-block">{{data.partner_shipping.street}}</span>
+            {{/if}}
+            {{#if data.partner_shipping.street2}}
+            <span class="d-block">{{data.partner_shipping.street2}}</span>
+            {{/if}}
+            {{#if data.partner_shipping.city}}
+            <span class="d-block">
+              {{data.partner_shipping.city}}{{#if data.partner_shipping.state}}, {{data.partner_shipping.state}}{{/if}}{{#if data.partner_shipping.zip}} {{data.partner_shipping.zip}}{{/if}}
+            </span>
+            {{/if}}
+            {{#if data.partner_shipping.country}}
+            <span class="d-block">{{data.partner_shipping.country}}</span>
             {{/if}}
             {{#if data.partner_shipping.phone}}
             <span class="d-block">Tel: {{data.partner_shipping.phone}}</span>
@@ -180,22 +235,27 @@
       {{!-- ============================================================
            DOCUMENT TITLE SECTION
            Dynamic title based on document state:
-           - "Quotation #" for draft/sent state
-           - "Order #" for confirmed orders
+           - "Quotation #" for draft/sent state (or default when no state)
+           - "Order #" for confirmed orders (sale/done state)
            - "Pro-Forma Invoice #" for proforma
+           State field is optional - defaults to Quotation if not present
            ============================================================ --}}
       <div class="document-title mb-4">
         <h1 class="mb-0">
-          {{#if (eq data.metadata.state "draft")}}
+          {{#if (eq data.state "draft")}}
           <span>Quotation # </span>
-          {{else if (eq data.metadata.state "sent")}}
+          {{else if (eq data.state "sent")}}
           <span>Quotation # </span>
-          {{else if (eq data.metadata.state "proforma")}}
+          {{else if (eq data.state "proforma")}}
           <span>Pro-Forma Invoice # </span>
-          {{else}}
+          {{else if (eq data.state "sale")}}
           <span>Order # </span>
+          {{else if (eq data.state "done")}}
+          <span>Order # </span>
+          {{else}}
+          <span>Quotation # </span>
           {{/if}}
-          <span>{{data.metadata.name}}</span>
+          <span>{{data.metadata.number}}</span>
         </h1>
       </div>
       
@@ -210,49 +270,53 @@
            ============================================================ --}}
       <div class="row mb-4" id="informations">
         {{!-- Customer Reference (Your Reference) --}}
-        {{#if data.metadata.client_order_ref}}
+        {{!-- Check both metadata.reference and top-level client_order_ref for compatibility --}}
+        {{#if data.metadata.reference}}
         <div class="col" name="informations_reference">
           <strong class="d-block">Your Reference</strong>
-          <div>{{data.metadata.client_order_ref}}</div>
+          <div>{{data.metadata.reference}}</div>
+        </div>
+        {{else if data.client_order_ref}}
+        <div class="col" name="informations_reference">
+          <strong class="d-block">Your Reference</strong>
+          <div>{{data.client_order_ref}}</div>
         </div>
         {{/if}}
         
         {{!-- Document Date - Label changes based on state --}}
-        {{#if data.metadata.date_order}}
+        {{#if data.metadata.date}}
         <div class="col" name="informations_date">
-          {{#if (eq data.metadata.state "proforma")}}
+          {{#if (eq data.state "proforma")}}
           <strong class="d-block">Issued Date</strong>
-          {{else if (eq data.metadata.state "draft")}}
-          <strong class="d-block">Quotation Date</strong>
-          {{else if (eq data.metadata.state "sent")}}
-          <strong class="d-block">Quotation Date</strong>
-          {{else}}
+          {{else if (eq data.state "sale")}}
           <strong class="d-block">Order Date</strong>
+          {{else if (eq data.state "done")}}
+          <strong class="d-block">Order Date</strong>
+          {{else}}
+          <strong class="d-block">Quotation Date</strong>
           {{/if}}
-          <div>{{data.metadata.date_order}}</div>
+          <div>{{data.metadata.date}}</div>
         </div>
         {{/if}}
         
-        {{!-- Expiration Date - Only shown for quotations (draft/sent state) --}}
-        {{#if data.metadata.validity_date}}
-        {{#if (eq data.metadata.state "draft")}}
+        {{!-- Expiration Date - Show for quotations (not confirmed orders) --}}
+        {{!-- validity_date is at top level per QuoteData interface --}}
+        {{#if data.validity_date}}
+        {{#unless (eq data.state "sale")}}
+        {{#unless (eq data.state "done")}}
         <div class="col" name="expiration_date">
           <strong class="d-block">Expiration</strong>
-          <div>{{data.metadata.validity_date}}</div>
+          <div>{{data.validity_date}}</div>
         </div>
-        {{else if (eq data.metadata.state "sent")}}
-        <div class="col" name="expiration_date">
-          <strong class="d-block">Expiration</strong>
-          <div>{{data.metadata.validity_date}}</div>
-        </div>
-        {{/if}}
+        {{/unless}}
+        {{/unless}}
         {{/if}}
         
-        {{!-- Delivery Date (Commitment Date) --}}
-        {{#if data.metadata.commitment_date}}
+        {{!-- Delivery Date (Commitment Date) - top level field --}}
+        {{#if data.commitment_date}}
         <div class="col" name="delivery_date">
           <strong class="d-block">Delivery Date</strong>
-          <div>{{data.metadata.commitment_date}}</div>
+          <div>{{data.commitment_date}}</div>
         </div>
         {{/if}}
         
@@ -303,8 +367,8 @@
                 {{/if}}
                 
                 {{!-- Tax Lines Breakdown --}}
-                {{#if data.totals.taxes}}
-                {{#each data.totals.taxes}}
+                {{#if data.totals.tax_lines}}
+                {{#each data.totals.tax_lines}}
                 <tr>
                   <td class="text-end">
                     {{!-- Tax Name/Label --}}
