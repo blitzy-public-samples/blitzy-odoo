@@ -1,0 +1,457 @@
+{{!--
+  Invoice Template (invoice.hbs)
+  
+  Handlebars HTML template for invoice PDF document generation.
+  Replicates the structure and layout of Odoo's QWeb invoice report template
+  (addons/account/views/report_invoice.xml).
+  
+  This template generates professional PDF invoices with:
+  - Company header with logo and contact information
+  - Customer billing and shipping addresses
+  - Invoice metadata (number, dates, references)
+  - Line items table with descriptions, quantities, prices, discounts, and taxes
+  - Tax summary and totals section
+  - Payment terms, notes, and QR code support
+  
+  Context Variables Expected:
+  ═══════════════════════════════════════════════════════════════════════════════
+  
+  data.company (Object) - Company information
+    - logo: Base64 encoded logo or URL
+    - name: Company name
+    - street, street2, city, state, zip, country: Address components
+    - phone, email, website: Contact info
+    - vat: VAT/Tax ID number
+    - vat_label: Custom label for VAT (e.g., "GST", "ABN")
+    - bank_account: Bank account details for payment
+  
+  data.partner (Object) - Customer/partner billing address
+    - name: Partner name
+    - street, city, country: Address components
+    - vat: Customer VAT/Tax ID
+    - ref: Customer reference code
+  
+  data.partner_shipping (Object|null) - Shipping address (if different from billing)
+    - name, street, city, country: Shipping address components
+  
+  data.metadata (Object) - Invoice metadata
+    - invoice_number: Document number (e.g., "INV/2024/0001")
+    - move_type: "out_invoice" | "out_refund" | "in_invoice" | "in_refund"
+    - state: "draft" | "posted" | "cancel"
+    - proforma: Boolean - whether this is a proforma invoice
+    - invoice_date: Invoice date
+    - due_date: Payment due date
+    - delivery_date: Delivery date (optional)
+    - origin: Source document reference (e.g., "SO123")
+    - reference: Customer reference
+    - incoterm: Incoterm code/location (optional)
+    - customer_code: Customer code from partner.ref
+    - currency: Currency object {symbol, code, position}
+    - payment_terms: Payment terms note
+    - payment_reference: Payment communication reference
+    - notes: Additional notes/narration
+  
+  data.lines (Array) - Invoice line items
+    - display_type: "line_section" | "line_subsection" | "line_note" | "product"
+    - name: Product/service name or section/note text
+    - quantity: Quantity ordered
+    - uom: Unit of measure
+    - unit_price: Unit price amount
+    - discount: Discount percentage
+    - taxes: Tax labels string (e.g., "VAT 20%")
+    - subtotal: Line subtotal amount
+    - padding_class: CSS class for indentation
+    - section_subtotal: Section subtotal amount (for sections)
+  
+  data.totals (Object) - Invoice totals
+    - subtotal: Untaxed total
+    - taxes: Array of {name, base, amount} for tax breakdown
+    - total: Total including taxes
+    - amount_due: Remaining amount due after payments
+    - amount_total_words: Total amount in words (optional)
+  
+  data.payments (Array|null) - Payment history
+    - date: Payment date
+    - amount: Payment amount
+    - is_refund: Boolean for refund payments
+  
+  data.fiscal_position_note (String|null) - Fiscal position notes
+  data.taxes_legal_notes (String|null) - Legal notes about taxes
+  data.show_qr_code (Boolean) - Whether to display QR code
+  data.qr_code_url (String|null) - URL/data URI for QR code
+  
+  hasDiscount (Boolean) - Whether any line has discount
+  hasTaxes (Boolean) - Whether any line has taxes
+  
+  Handlebars Helpers Used:
+  ═══════════════════════════════════════════════════════════════════════════════
+  - formatCurrency(amount, currency): Format monetary values
+  - formatDate(date): Format dates
+  - eq(a, b): Equality comparison
+  - #if, #each, #unless: Control flow
+  
+  Partials Used:
+  ═══════════════════════════════════════════════════════════════════════════════
+  - {{> header company=data.company}}: Company header section
+  - {{> line-items ...}}: Line items table
+  - {{> footer ...}}: Footer with payment terms and notes
+  
+  CSS Dependencies (from pdf.css):
+  ═══════════════════════════════════════════════════════════════════════════════
+  - Page layout: @page A4 with margins
+  - Tables: .table, .table-borderless, .o_main_table, .o_total_table
+  - Grid: .row, .col-5, .col-6, .col-12, .offset-col-6
+  - Typography: .fw-bold, .fw-bolder, .text-muted, .fst-italic, .lh-sm
+  - Spacing: .mb-0, .mb-2, .mb-3, .mb-4, .mt-3, .mt-4, .mt-5, .ms-5, .ms-auto
+  - Alignment: .text-start, .text-end, .text-nowrap
+  - Display: .d-block, .d-flex, .d-inline-block, .float-end, .clearfix
+  - Print: .avoid-page-break-inside
+  
+  @version 1.0.0
+  @author Document Sidecar Service
+--}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{getDocumentTitle data.metadata}} {{data.metadata.invoice_number}}</title>
+  <link rel="stylesheet" href="styles/pdf.css">
+</head>
+<body>
+  <div class="invoice-document">
+    
+    {{!-- ════════════════════════════════════════════════════════════════════
+         COMPANY HEADER SECTION
+         Uses the shared header partial for company branding
+         ════════════════════════════════════════════════════════════════════ --}}
+    {{> header company=data.company}}
+    
+    {{!-- ════════════════════════════════════════════════════════════════════
+         CUSTOMER ADDRESS BLOCK
+         Displays billing address and optional shipping address
+         Layout follows Odoo's report_invoice_document template
+         ════════════════════════════════════════════════════════════════════ --}}
+    <div class="row mb-4">
+      {{!-- Case 1: Shipping address exists and is different from billing --}}
+      {{#if data.partner_shipping}}
+        {{#unless (eq data.partner_shipping.name data.partner.name)}}
+          {{!-- Shipping Address Column (Left) --}}
+          <div class="col-6">
+            <div class="shipping-address-block">
+              <strong class="d-block mt-3">Shipping Address</strong>
+              <address class="mb-0">
+                {{#if data.partner_shipping.name}}<span class="d-block">{{data.partner_shipping.name}}</span>{{/if}}
+                {{#if data.partner_shipping.street}}<span class="d-block">{{data.partner_shipping.street}}</span>{{/if}}
+                {{#if data.partner_shipping.street2}}<span class="d-block">{{data.partner_shipping.street2}}</span>{{/if}}
+                <span class="d-block">
+                  {{#if data.partner_shipping.city}}{{data.partner_shipping.city}}{{#if data.partner_shipping.state}}, {{/if}}{{/if}}{{#if data.partner_shipping.state}}{{data.partner_shipping.state}} {{/if}}{{#if data.partner_shipping.zip}}{{data.partner_shipping.zip}}{{/if}}
+                </span>
+                {{#if data.partner_shipping.country}}<span class="d-block">{{data.partner_shipping.country}}</span>{{/if}}
+              </address>
+            </div>
+          </div>
+          {{!-- Billing Address Column (Right) --}}
+          <div class="col-6" name="address_not_same_as_shipping">
+            <address class="mb-0">
+              {{#if data.partner.name}}<span class="d-block fw-bold">{{data.partner.name}}</span>{{/if}}
+              {{#if data.partner.street}}<span class="d-block">{{data.partner.street}}</span>{{/if}}
+              {{#if data.partner.street2}}<span class="d-block">{{data.partner.street2}}</span>{{/if}}
+              <span class="d-block">
+                {{#if data.partner.city}}{{data.partner.city}}{{#if data.partner.state}}, {{/if}}{{/if}}{{#if data.partner.state}}{{data.partner.state}} {{/if}}{{#if data.partner.zip}}{{data.partner.zip}}{{/if}}
+              </span>
+              {{#if data.partner.country}}<span class="d-block">{{data.partner.country}}</span>{{/if}}
+            </address>
+            {{#if data.partner.vat}}
+            <div class="partner-vat mt-2">
+              {{#if data.company.vat_label}}{{data.company.vat_label}}{{else}}Tax ID{{/if}}: <span>{{data.partner.vat}}</span>
+            </div>
+            {{/if}}
+          </div>
+        {{else}}
+          {{!-- Shipping equals billing: single column right-aligned --}}
+          <div class="offset-col-6 col-6" name="address_same_as_shipping">
+            <address class="mb-0">
+              {{#if data.partner.name}}<span class="d-block fw-bold">{{data.partner.name}}</span>{{/if}}
+              {{#if data.partner.street}}<span class="d-block">{{data.partner.street}}</span>{{/if}}
+              {{#if data.partner.street2}}<span class="d-block">{{data.partner.street2}}</span>{{/if}}
+              <span class="d-block">
+                {{#if data.partner.city}}{{data.partner.city}}{{#if data.partner.state}}, {{/if}}{{/if}}{{#if data.partner.state}}{{data.partner.state}} {{/if}}{{#if data.partner.zip}}{{data.partner.zip}}{{/if}}
+              </span>
+              {{#if data.partner.country}}<span class="d-block">{{data.partner.country}}</span>{{/if}}
+            </address>
+            {{#if data.partner.vat}}
+            <div class="partner-vat mt-2">
+              {{#if data.company.vat_label}}{{data.company.vat_label}}{{else}}Tax ID{{/if}}: <span>{{data.partner.vat}}</span>
+            </div>
+            {{/if}}
+          </div>
+        {{/unless}}
+      {{else}}
+        {{!-- No shipping address: single column right-aligned --}}
+        <div class="offset-col-6 col-6" name="no_shipping">
+          <address class="mb-0">
+            {{#if data.partner.name}}<span class="d-block fw-bold">{{data.partner.name}}</span>{{/if}}
+            {{#if data.partner.street}}<span class="d-block">{{data.partner.street}}</span>{{/if}}
+            {{#if data.partner.street2}}<span class="d-block">{{data.partner.street2}}</span>{{/if}}
+            <span class="d-block">
+              {{#if data.partner.city}}{{data.partner.city}}{{#if data.partner.state}}, {{/if}}{{/if}}{{#if data.partner.state}}{{data.partner.state}} {{/if}}{{#if data.partner.zip}}{{data.partner.zip}}{{/if}}
+            </span>
+            {{#if data.partner.country}}<span class="d-block">{{data.partner.country}}</span>{{/if}}
+          </address>
+          {{#if data.partner.vat}}
+          <div class="partner-vat mt-2">
+            {{#if data.company.vat_label}}{{data.company.vat_label}}{{else}}Tax ID{{/if}}: <span>{{data.partner.vat}}</span>
+          </div>
+          {{/if}}
+        </div>
+      {{/if}}
+    </div>
+    
+    {{!-- ════════════════════════════════════════════════════════════════════
+         INVOICE MAIN CONTENT AREA
+         Contains document title, metadata, line items, and totals
+         ════════════════════════════════════════════════════════════════════ --}}
+    <div class="clearfix invoice_main">
+      <div class="page mb-4">
+        
+        {{!-- ══════════════════════════════════════════════════════════════
+             DOCUMENT TITLE
+             Dynamic title based on move_type, state, and proforma flag
+             Matches Odoo's layout_document_title logic
+             ══════════════════════════════════════════════════════════════ --}}
+        <h1 class="document-title mb-3">
+          {{!-- Non-proforma document titles --}}
+          {{#unless data.metadata.proforma}}
+            {{#if (eq data.metadata.move_type "out_invoice")}}
+              {{#if (eq data.metadata.state "posted")}}Invoice{{/if}}
+              {{#if (eq data.metadata.state "draft")}}Draft Invoice{{/if}}
+              {{#if (eq data.metadata.state "cancel")}}Cancelled Invoice{{/if}}
+            {{/if}}
+            {{#if (eq data.metadata.move_type "out_refund")}}
+              {{#if (eq data.metadata.state "posted")}}Credit Note{{/if}}
+              {{#if (eq data.metadata.state "draft")}}Draft Credit Note{{/if}}
+              {{#if (eq data.metadata.state "cancel")}}Cancelled Credit Note{{/if}}
+            {{/if}}
+            {{#if (eq data.metadata.move_type "in_invoice")}}Vendor Bill{{/if}}
+            {{#if (eq data.metadata.move_type "in_refund")}}Vendor Credit Note{{/if}}
+          {{else}}
+            {{!-- Proforma document titles --}}
+            {{#if (eq data.metadata.move_type "out_invoice")}}
+              {{#if (eq data.metadata.state "posted")}}Proforma Invoice{{/if}}
+              {{#if (eq data.metadata.state "draft")}}Draft Proforma Invoice{{/if}}
+              {{#if (eq data.metadata.state "cancel")}}Cancelled Proforma Invoice{{/if}}
+            {{/if}}
+            {{#if (eq data.metadata.move_type "out_refund")}}
+              {{#if (eq data.metadata.state "posted")}}Proforma Credit Note{{/if}}
+              {{#if (eq data.metadata.state "draft")}}Draft Proforma Credit Note{{/if}}
+              {{#if (eq data.metadata.state "cancel")}}Cancelled Proforma Credit Note{{/if}}
+            {{/if}}
+            {{#if (eq data.metadata.move_type "in_invoice")}}Proforma Vendor Bill{{/if}}
+            {{#if (eq data.metadata.move_type "in_refund")}}Proforma Vendor Credit Note{{/if}}
+          {{/unless}}
+          {{!-- Document Number --}}
+          {{#if data.metadata.invoice_number}}
+            <span class="invoice-number">{{data.metadata.invoice_number}}</span>
+          {{/if}}
+        </h1>
+        
+        {{!-- ══════════════════════════════════════════════════════════════
+             INVOICE METADATA SECTION
+             Displays key document information in a row layout
+             Conditional display based on available data
+             ══════════════════════════════════════════════════════════════ --}}
+        <div id="informations" class="row mb-4">
+          {{!-- Invoice Date --}}
+          {{#if data.metadata.invoice_date}}
+          <div class="col" name="invoice_date">
+            {{#if (eq data.metadata.move_type "out_invoice")}}<strong>Invoice Date</strong>{{/if}}
+            {{#if (eq data.metadata.move_type "out_refund")}}<strong>Credit Note Date</strong>{{/if}}
+            {{#if (eq data.metadata.move_type "in_invoice")}}<strong>Bill Date</strong>{{/if}}
+            {{#if (eq data.metadata.move_type "in_refund")}}<strong>Credit Note Date</strong>{{/if}}
+            <div>{{formatDate data.metadata.invoice_date}}</div>
+          </div>
+          {{/if}}
+          
+          {{!-- Due Date (only for posted out_invoices) --}}
+          {{#if data.metadata.due_date}}
+            {{#if (eq data.metadata.move_type "out_invoice")}}
+              {{#if (eq data.metadata.state "posted")}}
+              <div class="col" name="due_date">
+                <strong>Due Date</strong>
+                <div>{{formatDate data.metadata.due_date}}</div>
+              </div>
+              {{/if}}
+            {{/if}}
+          {{/if}}
+          
+          {{!-- Delivery Date --}}
+          {{#if data.metadata.delivery_date}}
+          <div class="col" name="delivery_date">
+            <strong>Delivery Date</strong>
+            <div>{{formatDate data.metadata.delivery_date}}</div>
+          </div>
+          {{/if}}
+          
+          {{!-- Source/Origin --}}
+          {{#if data.metadata.origin}}
+          <div class="col" name="origin">
+            <strong>Source</strong>
+            <div>{{data.metadata.origin}}</div>
+          </div>
+          {{/if}}
+          
+          {{!-- Customer Code --}}
+          {{#if data.metadata.customer_code}}
+          <div class="col" name="customer_code">
+            <strong>Customer Code</strong>
+            <div>{{data.metadata.customer_code}}</div>
+          </div>
+          {{/if}}
+          
+          {{!-- Reference --}}
+          {{#if data.metadata.reference}}
+          <div class="col" name="reference">
+            <strong>Reference</strong>
+            <div>{{data.metadata.reference}}</div>
+          </div>
+          {{/if}}
+          
+          {{!-- Incoterm --}}
+          {{#if data.metadata.incoterm}}
+          <div class="col" name="incoterm_id">
+            <strong>Incoterm</strong>
+            <div>{{data.metadata.incoterm}}</div>
+          </div>
+          {{/if}}
+        </div>
+        
+        {{!-- ══════════════════════════════════════════════════════════════
+             LINE ITEMS TABLE
+             Uses the shared line-items partial for consistent rendering
+             Passes all required parameters for invoice display
+             ══════════════════════════════════════════════════════════════ --}}
+        {{> line-items 
+            lines=data.lines 
+            showPrices=true 
+            showDiscount=hasDiscount 
+            showTaxes=hasTaxes 
+            currency=data.metadata.currency 
+            sectionColspan=(calculateSectionColspan hasDiscount hasTaxes)
+        }}
+        
+        {{!-- ══════════════════════════════════════════════════════════════
+             TOTALS SECTION
+             Right-aligned totals with tax breakdown and payment info
+             Uses avoid-page-break-inside to keep totals together
+             ══════════════════════════════════════════════════════════════ --}}
+        <div class="overflow-hidden">
+          <div id="right-elements" class="col-5 mt-5 ms-5 d-inline-block float-end">
+            <div id="total" class="clearfix row">
+              <div class="ms-auto">
+                <table class="o_total_table table table-borderless avoid-page-break-inside">
+                  
+                  {{!-- Subtotal (Untaxed Amount) --}}
+                  {{#if data.totals.subtotal}}
+                  <tr class="o_subtotal">
+                    <td>
+                      <span>Untaxed Amount</span>
+                    </td>
+                    <td class="text-end">
+                      <span class="oe_subtotal_footer_separator">{{formatCurrency data.totals.subtotal data.metadata.currency}}</span>
+                    </td>
+                  </tr>
+                  {{/if}}
+                  
+                  {{!-- Tax Breakdown --}}
+                  {{#each data.totals.taxes}}
+                  <tr class="o_taxes">
+                    <td style="max-width: 200px;">
+                      <span>{{this.name}}</span>
+                      {{#if this.base}}
+                        <span> on </span>
+                        <span class="text-nowrap">{{formatCurrency this.base ../data.metadata.currency}}</span>
+                      {{/if}}
+                    </td>
+                    <td class="text-end o_price_total">
+                      <span class="text-nowrap">{{formatCurrency this.amount ../data.metadata.currency}}</span>
+                    </td>
+                  </tr>
+                  {{/each}}
+                  
+                  {{!-- Total Amount --}}
+                  <tr class="o_total">
+                    <td><strong>Total</strong></td>
+                    <td class="text-end">
+                      <strong>{{formatCurrency data.totals.total data.metadata.currency}}</strong>
+                    </td>
+                  </tr>
+                  
+                  {{!-- Payment History (if payments exist) --}}
+                  {{#if data.payments}}
+                    {{#each data.payments}}
+                    <tr>
+                      <td>
+                        <i class="oe_form_field text-end oe_payment_label">
+                          {{#if this.is_refund}}Reversed on {{else}}Paid on {{/if}}
+                          <span>{{formatDate this.date}}</span>
+                        </i>
+                      </td>
+                      <td class="text-end">
+                        <span>{{formatCurrency this.amount ../data.metadata.currency}}</span>
+                      </td>
+                    </tr>
+                    {{/each}}
+                    
+                    {{!-- Amount Due (remaining balance) --}}
+                    {{#if data.totals.amount_due}}
+                    <tr class="fw-bold">
+                      <td>Amount Due</td>
+                      <td class="text-end">
+                        <span>{{formatCurrency data.totals.amount_due data.metadata.currency}}</span>
+                      </td>
+                    </tr>
+                    {{/if}}
+                  {{/if}}
+                  
+                </table>
+              </div>
+            </div>
+            
+            {{!-- Amount in Words --}}
+            {{#if data.totals.amount_total_words}}
+            <div class="mb-2">
+              <p class="text-end lh-sm">
+                Total amount in words: <br/>
+                <small class="text-muted lh-sm"><span>{{data.totals.amount_total_words}}</span></small>
+              </p>
+            </div>
+            {{/if}}
+            
+            {{!-- ══════════════════════════════════════════════════════════
+                 PAYMENT TERMS AND FOOTER SECTION
+                 Uses the footer partial for consistent footer rendering
+                 ══════════════════════════════════════════════════════════ --}}
+            <div id="payment_term" class="clearfix mt-3">
+              {{> footer 
+                  fiscalNotes=data.fiscal_position_note
+                  taxesLegalNotes=data.taxes_legal_notes
+                  paymentTerms=data.metadata.payment_terms_object
+                  paymentReference=data.metadata.payment_reference
+                  bankAccount=data.company.bank_account
+                  showQrCode=data.show_qr_code
+                  qrCodeUrl=data.qr_code_url
+                  notes=data.metadata.notes
+                  currency=data.metadata.currency
+              }}
+            </div>
+            
+          </div>
+        </div>
+        
+      </div>
+    </div>
+    
+  </div>
+</body>
+</html>

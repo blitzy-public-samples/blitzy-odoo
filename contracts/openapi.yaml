@@ -1,0 +1,1055 @@
+openapi: 3.0.3
+
+info:
+  title: Document Sidecar API
+  version: 1.0.0
+  description: |
+    TypeScript sidecar service for PDF document generation extracted from Odoo.
+    
+    This service provides PDF rendering capabilities for invoice, quote, and delivery slip
+    documents. It operates as a standalone microservice that receives document data via JSON
+    and returns base64-encoded PDF files.
+    
+    ## Authentication
+    
+    All render endpoints require two authentication headers:
+    - `X-API-Key`: API key for client identification
+    - `X-HMAC-Signature`: HMAC-SHA256 signature of the request body for integrity verification
+    
+    ## Rate Limiting
+    
+    The API enforces rate limiting to prevent abuse. Default limits are:
+    - 100 requests per minute per API key
+    
+    Rate limit information is returned in response headers:
+    - `X-Rate-Limit-Limit`: Maximum requests allowed in the window
+    - `X-Rate-Limit-Remaining`: Requests remaining in the current window
+    - `X-Rate-Limit-Reset`: Unix timestamp when the rate limit resets
+    
+    ## Error Handling
+    
+    All errors return a consistent JSON structure with an error code and message.
+    The sidecar is designed for zero-disruption compatibility - if unavailable,
+    Odoo falls back to native QWeb rendering automatically.
+  contact:
+    name: Blitzy Platform
+    url: https://blitzy.dev
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:{port}
+    description: Development server
+    variables:
+      port:
+        default: "3000"
+        description: Server port number
+  - url: https://{host}:{port}
+    description: Production server
+    variables:
+      host:
+        default: sidecar.example.com
+        description: Production hostname
+      port:
+        default: "443"
+        description: Production port (HTTPS)
+
+tags:
+  - name: render
+    description: Document rendering endpoints for PDF generation
+  - name: health
+    description: Health and readiness check endpoints for container orchestration
+
+paths:
+  /api/v1/render:
+    post:
+      operationId: renderDocument
+      summary: Generate PDF document
+      description: |
+        Renders a document (invoice, quote, or delivery slip) as a PDF file.
+        
+        The request must include:
+        - A unique request ID (UUID v4)
+        - The report type (invoice, quote, or delivery_slip)
+        - Record IDs from Odoo (only first record is processed - batch rendering is out of scope)
+        - Complete document data including company, partner, line items, totals, and metadata
+        
+        Optional render options can specify page size, language, and number of copies.
+        
+        **Note:** Only single-record rendering is supported. If multiple record_ids are provided,
+        only the first record will be processed and a warning will be logged.
+        
+        **Note:** Currently only `en_US` language is supported. The language parameter is
+        accepted for future compatibility but has no effect on rendering.
+      tags:
+        - render
+      security:
+        - ApiKeyAuth: []
+          HmacSignature: []
+      parameters:
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: |
+            Correlation ID for request tracing across services. If not provided,
+            a new UUID will be generated and included in the response.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        description: Document data and rendering options
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentRequest'
+            examples:
+              invoice:
+                summary: Invoice document request
+                value:
+                  request_id: "550e8400-e29b-41d4-a716-446655440000"
+                  report_type: "invoice"
+                  record_ids: [123]
+                  data:
+                    company:
+                      name: "Acme Corporation"
+                      street: "123 Main Street"
+                      city: "New York"
+                      state: "NY"
+                      zip: "10001"
+                      country: "United States"
+                      vat: "US123456789"
+                      phone: "+1-555-123-4567"
+                      email: "info@acme.com"
+                      website: "https://acme.com"
+                    partner:
+                      name: "John Doe"
+                      street: "456 Oak Avenue"
+                      city: "Los Angeles"
+                      state: "CA"
+                      zip: "90001"
+                      country: "United States"
+                      email: "john.doe@example.com"
+                    lines:
+                      - sequence: 1
+                        product_name: "Widget Pro"
+                        description: "Professional grade widget"
+                        quantity: 10
+                        uom: "Units"
+                        unit_price: 99.99
+                        discount: 0
+                        tax_names: ["VAT 20%"]
+                        subtotal: 999.90
+                    totals:
+                      subtotal: 999.90
+                      tax_amount: 199.98
+                      total: 1199.88
+                      currency_symbol: "$"
+                      tax_lines:
+                        - name: "VAT 20%"
+                          base: 999.90
+                          amount: 199.98
+                    metadata:
+                      number: "INV-2024-001234"
+                      date: "2024-01-15"
+                      due_date: "2024-02-14"
+                      payment_terms: "Net 30"
+                  options:
+                    page_size: "A4"
+                    language: "en_US"
+                    copies: 1
+              quote:
+                summary: Quote/Sale Order request
+                value:
+                  request_id: "660e8400-e29b-41d4-a716-446655440001"
+                  report_type: "quote"
+                  record_ids: [456]
+                  data:
+                    company:
+                      name: "Acme Corporation"
+                      street: "123 Main Street"
+                      city: "New York"
+                      state: "NY"
+                      zip: "10001"
+                      country: "United States"
+                    partner:
+                      name: "Jane Smith"
+                      street: "789 Pine Road"
+                      city: "Chicago"
+                      state: "IL"
+                      zip: "60601"
+                      country: "United States"
+                    lines:
+                      - sequence: 1
+                        product_name: "Consulting Services"
+                        description: "Professional consulting - 8 hours"
+                        quantity: 8
+                        uom: "Hours"
+                        unit_price: 150.00
+                        discount: 10
+                        tax_names: []
+                        subtotal: 1080.00
+                    totals:
+                      subtotal: 1080.00
+                      tax_amount: 0
+                      total: 1080.00
+                      currency_symbol: "$"
+                      tax_lines: []
+                    metadata:
+                      number: "S00123"
+                      date: "2024-01-10"
+                      reference: "RFQ-2024-001"
+                      salesperson: "Bob Sales"
+              delivery_slip:
+                summary: Delivery slip request
+                value:
+                  request_id: "770e8400-e29b-41d4-a716-446655440002"
+                  report_type: "delivery_slip"
+                  record_ids: [789]
+                  data:
+                    company:
+                      name: "Acme Corporation"
+                      street: "123 Main Street"
+                      city: "New York"
+                      state: "NY"
+                      zip: "10001"
+                      country: "United States"
+                    partner:
+                      name: "Warehouse Customer"
+                      street: "1000 Industrial Blvd"
+                      city: "Dallas"
+                      state: "TX"
+                      zip: "75201"
+                      country: "United States"
+                    lines:
+                      - sequence: 1
+                        product_name: "Widget Pro"
+                        description: "Professional grade widget"
+                        quantity: 10
+                        uom: "Units"
+                        unit_price: 0
+                        discount: 0
+                        tax_names: []
+                        subtotal: 0
+                    totals:
+                      subtotal: 0
+                      tax_amount: 0
+                      total: 0
+                      currency_symbol: "$"
+                      tax_lines: []
+                    metadata:
+                      number: "WH/OUT/00123"
+                      date: "2024-01-16"
+                      reference: "SO123"
+                      notes: "Handle with care"
+      responses:
+        '200':
+          description: PDF generated successfully
+          headers:
+            X-Request-ID:
+              description: Correlation ID for request tracing
+              schema:
+                type: string
+                format: uuid
+            X-Rate-Limit-Limit:
+              description: Maximum number of requests allowed in the current window
+              schema:
+                type: integer
+            X-Rate-Limit-Remaining:
+              description: Number of requests remaining in the current window
+              schema:
+                type: integer
+            X-Rate-Limit-Reset:
+              description: Unix timestamp when the rate limit window resets
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderSuccessResponse'
+              example:
+                success: true
+                data:
+                  pdf_base64: "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC..."
+                  filename: "INV-2024-001234.pdf"
+                  page_count: 1
+                  content_type: "application/pdf"
+                  render_time_ms: 1250
+                request_id: "550e8400-e29b-41d4-a716-446655440000"
+        '400':
+          description: Validation error - request payload is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: "VALIDATION_ERROR"
+                  message: "Invalid request payload"
+                  details:
+                    issues:
+                      - path: ["data", "lines"]
+                        message: "Array must contain at least 1 element(s)"
+                  request_id: "550e8400-e29b-41d4-a716-446655440000"
+        '401':
+          description: Authentication failed - invalid API key or HMAC signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_api_key:
+                  summary: Invalid API key
+                  value:
+                    success: false
+                    error:
+                      code: "AUTH_FAILED"
+                      message: "Invalid or missing API key"
+                invalid_signature:
+                  summary: Invalid HMAC signature
+                  value:
+                    success: false
+                    error:
+                      code: "AUTH_FAILED"
+                      message: "Invalid HMAC signature"
+        '404':
+          description: Template not found for the requested report type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: "TEMPLATE_NOT_FOUND"
+                  message: "Template not found for report type: unknown_type"
+                  request_id: "550e8400-e29b-41d4-a716-446655440000"
+        '429':
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              description: Number of seconds to wait before retrying
+              schema:
+                type: integer
+            X-Rate-Limit-Limit:
+              description: Maximum number of requests allowed in the current window
+              schema:
+                type: integer
+            X-Rate-Limit-Remaining:
+              description: Number of requests remaining (0 when rate limited)
+              schema:
+                type: integer
+            X-Rate-Limit-Reset:
+              description: Unix timestamp when the rate limit window resets
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: "RATE_LIMITED"
+                  message: "Rate limit exceeded. Please retry after 60 seconds."
+        '500':
+          description: Internal server error - rendering failed or unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                render_failed:
+                  summary: PDF rendering failed
+                  value:
+                    success: false
+                    error:
+                      code: "RENDER_FAILED"
+                      message: "Failed to generate PDF: Puppeteer navigation timeout"
+                      request_id: "550e8400-e29b-41d4-a716-446655440000"
+                internal_error:
+                  summary: Unexpected internal error
+                  value:
+                    success: false
+                    error:
+                      code: "INTERNAL_ERROR"
+                      message: "An unexpected error occurred"
+                      request_id: "550e8400-e29b-41d4-a716-446655440000"
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Service health check
+      description: |
+        Returns the health status of the sidecar service.
+        
+        This endpoint is intended for container orchestration systems (e.g., Kubernetes, Docker)
+        to determine if the service is alive. A 200 response indicates the service is running.
+        
+        **Note:** This endpoint does not require authentication.
+      tags:
+        - health
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "ok"
+                timestamp: "2024-01-15T10:30:00.000Z"
+                version: "1.0.0"
+
+  /ready:
+    get:
+      operationId: readinessCheck
+      summary: Service readiness check
+      description: |
+        Returns the readiness status of the sidecar service.
+        
+        This endpoint indicates whether the service is ready to accept traffic.
+        It checks if the Puppeteer browser instance is initialized and available.
+        
+        Use this endpoint for:
+        - Kubernetes readiness probes
+        - Load balancer health checks
+        - Deployment verification
+        
+        **Note:** This endpoint does not require authentication.
+      tags:
+        - health
+      security: []
+      responses:
+        '200':
+          description: Service is ready to accept requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+              example:
+                status: "ready"
+                browser: true
+                timestamp: "2024-01-15T10:30:00.000Z"
+        '503':
+          description: Service is not ready (e.g., browser not initialized)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+              example:
+                status: "not_ready"
+                browser: false
+                timestamp: "2024-01-15T10:30:00.000Z"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        API key for client authentication. Each client is assigned a unique API key
+        that must be included in all render requests.
+        
+        To obtain an API key, configure the `API_KEY` environment variable in the
+        sidecar service and the matching `document_sidecar.api_key` parameter in Odoo.
+    HmacSignature:
+      type: apiKey
+      in: header
+      name: X-HMAC-Signature
+      description: |
+        HMAC-SHA256 signature of the request body for integrity verification.
+        
+        To generate the signature:
+        1. Stringify the request body as JSON (compact, no whitespace)
+        2. Compute HMAC-SHA256 using the shared secret key
+        3. Base64-encode the resulting hash
+        
+        Example (Python):
+        ```python
+        import hmac
+        import hashlib
+        import base64
+        import json
+        
+        body = json.dumps(payload, separators=(',', ':'))
+        signature = base64.b64encode(
+            hmac.new(
+                secret_key.encode(),
+                body.encode(),
+                hashlib.sha256
+            ).digest()
+        ).decode()
+        ```
+        
+        The shared secret is configured via the `SECRET_KEY` environment variable
+        in the sidecar and `document_sidecar.secret_key` parameter in Odoo.
+
+  schemas:
+    # ========================================
+    # Request Schemas
+    # ========================================
+    
+    ReportType:
+      type: string
+      enum:
+        - invoice
+        - quote
+        - delivery_slip
+      description: |
+        Supported document report types:
+        - `invoice`: Invoice/bill document from account.move
+        - `quote`: Quotation/Sale Order from sale.order
+        - `delivery_slip`: Delivery slip from stock.picking
+
+    PageSize:
+      type: string
+      enum:
+        - A4
+        - Letter
+        - Legal
+      default: A4
+      description: |
+        Page size for the generated PDF:
+        - `A4`: ISO A4 (210mm x 297mm) - Default
+        - `Letter`: US Letter (8.5" x 11")
+        - `Legal`: US Legal (8.5" x 14")
+
+    RenderOptions:
+      type: object
+      description: Optional rendering configuration
+      properties:
+        page_size:
+          $ref: '#/components/schemas/PageSize'
+        language:
+          type: string
+          default: en_US
+          description: |
+            Language code for document rendering.
+            **Note:** Currently only `en_US` is supported. Other values are accepted
+            but have no effect (i18n is out of scope for the initial implementation).
+          example: "en_US"
+        copies:
+          type: integer
+          minimum: 1
+          default: 1
+          description: Number of copies to include in the PDF
+          example: 1
+      additionalProperties: false
+
+    CompanyData:
+      type: object
+      description: Company information for the document header
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Company legal name
+          example: "Acme Corporation"
+        street:
+          type: string
+          description: Primary street address
+          example: "123 Main Street"
+        street2:
+          type: string
+          description: Secondary address line (suite, building, etc.)
+          example: "Suite 500"
+        city:
+          type: string
+          description: City name
+          example: "New York"
+        state:
+          type: string
+          description: State or province
+          example: "NY"
+        zip:
+          type: string
+          description: Postal/ZIP code
+          example: "10001"
+        country:
+          type: string
+          description: Country name
+          example: "United States"
+        vat:
+          type: string
+          description: VAT/Tax identification number
+          example: "US123456789"
+        phone:
+          type: string
+          description: Contact phone number
+          example: "+1-555-123-4567"
+        email:
+          type: string
+          format: email
+          description: Contact email address
+          example: "info@acme.com"
+        website:
+          type: string
+          format: uri
+          description: Company website URL
+          example: "https://acme.com"
+        logo_url:
+          type: string
+          format: uri
+          description: URL to company logo image (PNG, JPG, or SVG recommended)
+          example: "https://acme.com/logo.png"
+      additionalProperties: false
+
+    PartnerData:
+      type: object
+      description: Customer/Partner information for the document
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Partner name (person or company)
+          example: "John Doe"
+        street:
+          type: string
+          description: Primary street address
+          example: "456 Oak Avenue"
+        street2:
+          type: string
+          description: Secondary address line
+          example: "Apt 2B"
+        city:
+          type: string
+          description: City name
+          example: "Los Angeles"
+        state:
+          type: string
+          description: State or province
+          example: "CA"
+        zip:
+          type: string
+          description: Postal/ZIP code
+          example: "90001"
+        country:
+          type: string
+          description: Country name
+          example: "United States"
+        vat:
+          type: string
+          description: Partner VAT/Tax identification number
+          example: "US987654321"
+        phone:
+          type: string
+          description: Contact phone number
+          example: "+1-555-987-6543"
+        email:
+          type: string
+          format: email
+          description: Contact email address
+          example: "john.doe@example.com"
+      additionalProperties: false
+
+    LineItem:
+      type: object
+      description: |
+        Document line item representing a product or service.
+        
+        **Note for delivery slips:** `unit_price` and `subtotal` should be set to 0
+        as delivery slips show quantities only, not pricing information.
+      required:
+        - sequence
+        - product_name
+        - quantity
+        - unit_price
+        - subtotal
+      properties:
+        sequence:
+          type: integer
+          description: Line item sequence number for ordering
+          example: 1
+        product_name:
+          type: string
+          description: Product or service name
+          example: "Widget Pro"
+        description:
+          type: string
+          description: Additional description or notes for the line item
+          example: "Professional grade widget with extended warranty"
+        quantity:
+          type: number
+          description: Quantity ordered/delivered
+          example: 10
+        uom:
+          type: string
+          description: Unit of measure
+          example: "Units"
+        unit_price:
+          type: number
+          description: Price per unit (set to 0 for delivery slips)
+          example: 99.99
+        discount:
+          type: number
+          default: 0
+          description: Discount percentage (0-100)
+          example: 10
+        tax_names:
+          type: array
+          items:
+            type: string
+          description: List of applicable tax names
+          example: ["VAT 20%", "City Tax 2%"]
+        subtotal:
+          type: number
+          description: Line subtotal after discount, before taxes (set to 0 for delivery slips)
+          example: 899.91
+      additionalProperties: false
+
+    TaxLine:
+      type: object
+      description: Tax breakdown line showing base amount and tax amount
+      required:
+        - name
+        - base
+        - amount
+      properties:
+        name:
+          type: string
+          description: Tax name/description
+          example: "VAT 20%"
+        base:
+          type: number
+          description: Tax base amount (subtotal the tax is calculated on)
+          example: 999.90
+        amount:
+          type: number
+          description: Calculated tax amount
+          example: 199.98
+      additionalProperties: false
+
+    Totals:
+      type: object
+      description: Document totals section
+      required:
+        - subtotal
+        - tax_amount
+        - total
+      properties:
+        subtotal:
+          type: number
+          description: Sum of all line subtotals before tax
+          example: 999.90
+        tax_amount:
+          type: number
+          description: Total tax amount
+          example: 199.98
+        total:
+          type: number
+          description: Grand total including taxes
+          example: 1199.88
+        amount_paid:
+          type: number
+          description: Amount already paid (for invoices)
+          example: 500.00
+        amount_due:
+          type: number
+          description: Remaining amount due (for invoices)
+          example: 699.88
+        currency_symbol:
+          type: string
+          default: "$"
+          description: Currency symbol for formatting
+          example: "$"
+        tax_lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaxLine'
+          description: Breakdown of taxes by type
+      additionalProperties: false
+
+    DocumentMetadata:
+      type: object
+      description: Document-specific metadata (number, dates, references)
+      required:
+        - number
+        - date
+      properties:
+        number:
+          type: string
+          description: Document number/reference (e.g., INV-2024-001234)
+          example: "INV-2024-001234"
+        date:
+          type: string
+          description: Document date (formatted string, e.g., "January 15, 2024" or "2024-01-15")
+          example: "2024-01-15"
+        due_date:
+          type: string
+          description: Payment due date (for invoices)
+          example: "2024-02-14"
+        reference:
+          type: string
+          description: Customer reference or PO number
+          example: "PO-2024-ABC123"
+        salesperson:
+          type: string
+          description: Assigned salesperson name
+          example: "Jane Smith"
+        payment_terms:
+          type: string
+          description: Payment terms description
+          example: "Net 30"
+        notes:
+          type: string
+          description: Additional notes to display on the document
+          example: "Thank you for your business!"
+        terms_and_conditions:
+          type: string
+          description: Terms and conditions text
+          example: "All sales are final. Returns accepted within 30 days."
+      additionalProperties: false
+
+    DocumentData:
+      type: object
+      description: Complete document data for rendering
+      required:
+        - company
+        - partner
+        - lines
+        - totals
+        - metadata
+      properties:
+        company:
+          $ref: '#/components/schemas/CompanyData'
+        partner:
+          $ref: '#/components/schemas/PartnerData'
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineItem'
+          minItems: 1
+          description: Document line items (at least one required)
+        totals:
+          $ref: '#/components/schemas/Totals'
+        metadata:
+          $ref: '#/components/schemas/DocumentMetadata'
+      additionalProperties: false
+
+    DocumentRequest:
+      type: object
+      description: |
+        Complete request payload for document rendering.
+        
+        The request includes:
+        - Unique request ID for tracing and correlation
+        - Report type determining which template to use
+        - Record IDs from Odoo (for logging/reference only)
+        - Complete document data
+        - Optional rendering options
+      required:
+        - request_id
+        - report_type
+        - record_ids
+        - data
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier (UUID v4) for tracing
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        report_type:
+          $ref: '#/components/schemas/ReportType'
+        record_ids:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+          minItems: 1
+          description: |
+            Odoo record IDs for the document(s). Currently only single-record
+            rendering is supported - only the first ID will be processed.
+          example: [123]
+        data:
+          $ref: '#/components/schemas/DocumentData'
+        options:
+          $ref: '#/components/schemas/RenderOptions'
+      additionalProperties: false
+
+    # ========================================
+    # Response Schemas
+    # ========================================
+
+    ErrorCode:
+      type: string
+      enum:
+        - VALIDATION_ERROR
+        - AUTH_FAILED
+        - TEMPLATE_NOT_FOUND
+        - RATE_LIMITED
+        - RENDER_FAILED
+        - INTERNAL_ERROR
+      description: |
+        Error codes returned by the API:
+        - `VALIDATION_ERROR` (400): Request payload validation failed
+        - `AUTH_FAILED` (401): Invalid API key or HMAC signature
+        - `TEMPLATE_NOT_FOUND` (404): Unknown report type requested
+        - `RATE_LIMITED` (429): Rate limit exceeded
+        - `RENDER_FAILED` (500): PDF rendering failed (Puppeteer error)
+        - `INTERNAL_ERROR` (500): Unexpected server error
+
+    ErrorDetails:
+      type: object
+      description: Additional error context and validation details
+      additionalProperties: true
+      example:
+        issues:
+          - path: ["data", "lines"]
+            message: "Array must contain at least 1 element(s)"
+
+    ErrorObject:
+      type: object
+      description: Structured error information
+      required:
+        - code
+        - message
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid request payload"
+        details:
+          $ref: '#/components/schemas/ErrorDetails'
+        request_id:
+          type: string
+          format: uuid
+          description: Request ID for correlation (if available)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      additionalProperties: false
+
+    ErrorResponse:
+      type: object
+      description: Standardized error response format
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+          description: Always false for error responses
+        error:
+          $ref: '#/components/schemas/ErrorObject'
+      additionalProperties: false
+
+    RenderResultData:
+      type: object
+      description: Successful render result containing the PDF and metadata
+      required:
+        - pdf_base64
+        - filename
+        - page_count
+        - content_type
+        - render_time_ms
+      properties:
+        pdf_base64:
+          type: string
+          description: |
+            Base64-encoded PDF document. Decode using standard Base64 decoding
+            to get the raw PDF binary data.
+          example: "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC..."
+        filename:
+          type: string
+          description: Suggested filename for the PDF (based on document number)
+          example: "INV-2024-001234.pdf"
+        page_count:
+          type: integer
+          minimum: 1
+          description: Number of pages in the generated PDF
+          example: 1
+        content_type:
+          type: string
+          description: MIME type of the response (always application/pdf)
+          example: "application/pdf"
+        render_time_ms:
+          type: integer
+          minimum: 0
+          description: Time taken to render the PDF in milliseconds
+          example: 1250
+      additionalProperties: false
+
+    RenderSuccessResponse:
+      type: object
+      description: Successful render response
+      required:
+        - success
+        - data
+        - request_id
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+          description: Always true for successful responses
+        data:
+          $ref: '#/components/schemas/RenderResultData'
+        request_id:
+          type: string
+          format: uuid
+          description: Request ID for correlation
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      additionalProperties: false
+
+    # ========================================
+    # Health Check Schemas
+    # ========================================
+
+    HealthResponse:
+      type: object
+      description: Service health check response
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+          description: Health status (always "ok" if the endpoint responds)
+          example: "ok"
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp
+          example: "2024-01-15T10:30:00.000Z"
+        version:
+          type: string
+          description: Service version number
+          example: "1.0.0"
+      additionalProperties: false
+
+    ReadinessResponse:
+      type: object
+      description: Service readiness check response
+      required:
+        - status
+        - browser
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - not_ready
+          description: |
+            Readiness status:
+            - `ready`: Service can accept render requests
+            - `not_ready`: Service is starting up or browser is unavailable
+          example: "ready"
+        browser:
+          type: boolean
+          description: Whether the Puppeteer browser instance is initialized
+          example: true
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp
+          example: "2024-01-15T10:30:00.000Z"
+      additionalProperties: false

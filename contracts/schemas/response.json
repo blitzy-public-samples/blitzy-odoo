@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://blitzy-odoo.com/contracts/schemas/response.json",
+  "title": "Document Sidecar Response Schema",
+  "description": "JSON Schema for validating PDF render responses from the document sidecar service. Supports both success responses with base64-encoded PDF data and error responses with standardized error codes.",
+  "definitions": {
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "VALIDATION_ERROR",
+        "AUTH_FAILED",
+        "TEMPLATE_NOT_FOUND",
+        "RATE_LIMITED",
+        "RENDER_FAILED",
+        "INTERNAL_ERROR"
+      ],
+      "description": "Standardized error codes for the document sidecar API. VALIDATION_ERROR (400) indicates request payload validation failure. AUTH_FAILED (401) indicates invalid API key or HMAC signature. TEMPLATE_NOT_FOUND (404) indicates unknown report type. RATE_LIMITED (429) indicates request rate exceeded. RENDER_FAILED (500) indicates PDF generation failure. INTERNAL_ERROR (500) indicates unexpected server error."
+    },
+    "ErrorDetails": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional object containing additional error context. Structure varies by error type - may include validation errors, stack traces in development mode, or other diagnostic information."
+    },
+    "ErrorObject": {
+      "type": "object",
+      "description": "Structured error information returned when a render request fails. Contains the error code, human-readable message, optional details, and optional request ID for correlation.",
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/ErrorCode",
+          "description": "Machine-readable error code identifying the type of failure"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable error message describing what went wrong"
+        },
+        "details": {
+          "$ref": "#/definitions/ErrorDetails",
+          "description": "Optional additional error context and diagnostic information"
+        },
+        "request_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Correlation ID from the original request for distributed tracing"
+        }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "description": "Response envelope for failed render requests. The success field is always false, and the error field contains structured error information.",
+      "properties": {
+        "success": {
+          "const": false,
+          "description": "Always false for error responses, enabling easy discrimination from success responses"
+        },
+        "error": {
+          "$ref": "#/definitions/ErrorObject",
+          "description": "Structured error information describing the failure"
+        }
+      },
+      "required": ["success", "error"],
+      "additionalProperties": false
+    },
+    "RenderResultData": {
+      "type": "object",
+      "description": "The actual render result data containing the generated PDF and metadata. Returned within a successful response envelope.",
+      "properties": {
+        "pdf_base64": {
+          "type": "string",
+          "description": "Base64-encoded PDF document content. Decode using standard base64 decoder to obtain raw PDF bytes."
+        },
+        "filename": {
+          "type": "string",
+          "description": "Suggested filename for the generated PDF document, including the .pdf extension (e.g., 'INV-2024-001.pdf')"
+        },
+        "page_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of pages in the generated PDF document. Always at least 1."
+        },
+        "content_type": {
+          "type": "string",
+          "default": "application/pdf",
+          "description": "MIME type of the generated document. Always 'application/pdf' for current implementation."
+        },
+        "render_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time taken to render the PDF in milliseconds, measured from request receipt to PDF generation completion. Useful for performance monitoring."
+        }
+      },
+      "required": ["pdf_base64", "filename", "page_count", "content_type", "render_time_ms"],
+      "additionalProperties": false
+    },
+    "RenderSuccessResponse": {
+      "type": "object",
+      "description": "Response envelope for successful render requests. Contains the success flag, render result data, and the request correlation ID.",
+      "properties": {
+        "success": {
+          "const": true,
+          "description": "Always true for successful responses, enabling easy discrimination from error responses"
+        },
+        "data": {
+          "$ref": "#/definitions/RenderResultData",
+          "description": "The render result containing the PDF and associated metadata"
+        },
+        "request_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Echo of the request_id from the original request for correlation and tracing"
+        }
+      },
+      "required": ["success", "data", "request_id"],
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/definitions/RenderSuccessResponse"
+    },
+    {
+      "$ref": "#/definitions/ErrorResponse"
+    }
+  ]
+}

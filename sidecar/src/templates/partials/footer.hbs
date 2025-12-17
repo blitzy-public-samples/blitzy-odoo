@@ -1,0 +1,208 @@
+{{!--
+  Footer Partial Template
+  
+  Shared Handlebars partial for rendering document footer section.
+  Used across invoice, quote, and delivery slip PDF documents.
+  
+  This template mirrors the footer structure from Odoo's QWeb templates
+  to ensure visual consistency across all document types.
+  
+  Context Variables Expected:
+    - fiscalNotes: String - Fiscal position notes text
+    - taxesLegalNotes: String - Legal notes about taxes
+    - paymentTerms: Object - Payment terms with nested properties:
+        - note: String - Payment term description
+        - showDetails: Boolean - Whether to show payment details
+        - earlyDiscount: Boolean - Whether early discount applies
+        - discountAmount: Number - Discount amount if paid early
+        - discountDate: String - Date for early discount
+        - installments: Array - List of installment objects:
+            - amount: Number - Installment amount
+            - date: String - Installment due date
+    - paymentReference: String - Payment communication reference code
+    - bankAccount: String - Bank account details for payment
+    - showQrCode: Boolean - Whether to display QR code section
+    - qrCodeUrl: String - URL/data URI for QR code image
+    - notes: String - Additional notes/narration text
+    - termsAndConditions: String - Terms and conditions text
+    - showSignature: Boolean - Whether to show signature area
+    - showRecipientSignature: Boolean - Whether to show recipient signature
+    - companyName: String - Company name for signature block
+    - currency: Object - Currency for formatting (symbol, code)
+  
+  CSS Dependencies (from pdf.css):
+    - Layout: .row, .col-6, .clearfix
+    - Spacing: .mb-2, .mb-3, .mt-2, .mt-3, .mt-4, .me-3
+    - Typography: .text-muted, .fw-bold, .fst-italic, .lh-sm, .small
+    - Display: .d-flex, .d-inline
+    - Position: .position-relative
+    - Page break: .avoid-page-break-inside
+    - Text: .justify-text
+  
+  @version 1.0.0
+  @author Document Sidecar Service
+--}}
+
+<div class="document-footer clearfix mt-3">
+  
+  {{!-- ============================================================
+       FISCAL POSITION NOTES SECTION
+       Displays notes from the fiscal position (tax location rules)
+       ============================================================ --}}
+  {{#if fiscalNotes}}
+  <div class="fiscal-notes justify-text mb-2">
+    <p class="mb-0">{{fiscalNotes}}</p>
+  </div>
+  {{/if}}
+
+  {{!-- ============================================================
+       TAXES LEGAL NOTES SECTION
+       Displays legal notes about taxes (e.g., reverse charge, VAT)
+       ============================================================ --}}
+  {{#if taxesLegalNotes}}
+  <div class="taxes-legal-notes justify-text mb-2">
+    <p class="mb-0">{{taxesLegalNotes}}</p>
+  </div>
+  {{/if}}
+
+  {{!-- ============================================================
+       PAYMENT TERMS SECTION
+       Displays payment terms note and optional installment details
+       Mirrors Odoo's payment_term div structure
+       ============================================================ --}}
+  {{#if paymentTerms}}
+  <div class="payment-terms mb-3">
+    {{!-- Payment term note (e.g., "Payment within 30 days") --}}
+    {{#if paymentTerms.note}}
+    <span id="payment_terms_note">{{paymentTerms.note}}</span>
+    {{/if}}
+    
+    {{!-- Detailed payment breakdown if applicable --}}
+    {{#if paymentTerms.showDetails}}
+    <div class="payment-term-details row mt-2">
+      {{!-- Early discount information --}}
+      {{#if paymentTerms.earlyDiscount}}
+      <div class="col-12 mb-1">
+        <span>{{formatCurrency paymentTerms.discountAmount currency}}</span>
+        <span> due if paid before </span>
+        <span class="fw-bold">{{paymentTerms.discountDate}}</span>
+      </div>
+      {{/if}}
+      
+      {{!-- Installment breakdown --}}
+      {{#if paymentTerms.installments}}
+      {{#each paymentTerms.installments}}
+      <div class="col-12 mb-1">
+        <span>{{add @index 1}}</span>
+        <span> - Installment of </span>
+        <span class="fw-bold">{{formatCurrency this.amount ../currency}}</span>
+        <span> due on </span>
+        <span class="fw-bold">{{this.date}}</span>
+      </div>
+      {{/each}}
+      {{/if}}
+    </div>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{!-- ============================================================
+       PAYMENT COMMUNICATION SECTION
+       Displays payment reference and bank account for invoices
+       ============================================================ --}}
+  {{#if paymentReference}}
+  <div class="payment-communication mb-3">
+    <p class="mb-0">
+      <span>Payment Communication: </span>
+      <span class="fw-bold">{{paymentReference}}</span>
+      {{#if bankAccount}}
+      <br/>
+      <span>on this account: </span>
+      <span class="fw-bold">{{bankAccount}}</span>
+      {{/if}}
+    </p>
+  </div>
+  {{/if}}
+
+  {{!-- ============================================================
+       QR CODE SECTION
+       Displays banking QR code for mobile payment apps
+       Avoids page break inside for better print layout
+       ============================================================ --}}
+  {{#if showQrCode}}
+  <div id="qrcode" class="qrcode-section d-flex mb-3 avoid-page-break-inside">
+    {{#if qrCodeUrl}}
+    <div class="qrcode me-3">
+      <p class="position-relative mb-0">
+        <img src="{{qrCodeUrl}}" alt="Payment QR Code" class="qrcode-image"/>
+      </p>
+    </div>
+    <div class="qrcode-info d-inline text-muted lh-sm fst-italic">
+      <p class="mb-0">Scan this QR Code with<br/>your banking application</p>
+    </div>
+    {{else}}
+    <div class="qrcode-placeholder">
+      {{!-- Placeholder when QR URL is not available --}}
+    </div>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{!-- ============================================================
+       NOTES / NARRATION SECTION
+       Displays additional notes, comments, or narration
+       Uses justified text for better readability
+       ============================================================ --}}
+  {{#if notes}}
+  <div class="notes-section text-muted mb-3" style="text-align:justify;text-justify:inter-word;">
+    <span>{{notes}}</span>
+  </div>
+  {{/if}}
+
+  {{!-- ============================================================
+       TERMS AND CONDITIONS SECTION
+       Displays company terms and conditions
+       ============================================================ --}}
+  {{#if termsAndConditions}}
+  <div class="terms-conditions mb-3">
+    <strong>Terms &amp; Conditions</strong>
+    <div class="mt-2">{{termsAndConditions}}</div>
+  </div>
+  {{/if}}
+
+  {{!-- ============================================================
+       SIGNATURE AREA SECTION
+       Displays signature blocks for delivery slips and quotes
+       Includes company signature and optional recipient signature
+       ============================================================ --}}
+  {{#if showSignature}}
+  <div class="signature-area mt-4 avoid-page-break-inside">
+    <div class="row">
+      {{!-- Company/Sender Signature Block --}}
+      <div class="col-6">
+        <p class="mb-2">For and on behalf of:</p>
+        {{#if companyName}}
+        <p class="fw-bold mb-3">{{companyName}}</p>
+        {{/if}}
+        <div class="signature-line mt-4" style="border-top: 1px solid #000; width: 200px;">
+          <p class="text-muted small mt-1 mb-0">Authorized Signature</p>
+        </div>
+      </div>
+      
+      {{!-- Recipient/Customer Signature Block (for delivery slips) --}}
+      {{#if showRecipientSignature}}
+      <div class="col-6">
+        <p class="mb-2">Received by:</p>
+        <div class="signature-line mt-4" style="border-top: 1px solid #000; width: 200px;">
+          <p class="text-muted small mt-1 mb-0">Customer Signature</p>
+        </div>
+        <div class="mt-3">
+          <p class="text-muted small mb-0">Date: ________________</p>
+        </div>
+      </div>
+      {{/if}}
+    </div>
+  </div>
+  {{/if}}
+
+</div>

@@ -1,0 +1,474 @@
+{{!--
+  Quote/Sale Order PDF Template
+  
+  Handlebars HTML template for generating quotation and sales order PDF documents.
+  This template replicates the structure and layout of Odoo's QWeb report_saleorder_document
+  template from addons/sale/report/ir_actions_report_templates.xml.
+  
+  Template Features:
+  - Company header with branding via {{> header}} partial
+  - Customer billing and shipping address blocks (constructed from individual address fields)
+  - Dynamic document title based on state (Quotation/Order/Pro-Forma Invoice)
+  - Quote metadata section (reference, dates, salesperson)
+  - Line items table via {{> line-items}} partial with full pricing support
+  - Tax breakdown and totals section
+  - Electronic signature display (when available)
+  - Footer with notes, payment terms, and terms & conditions via {{> footer}} partial
+  
+  Data Context Expected (aligned with domain.types.ts):
+  - data.company: Company information object (name, street, city, etc.)
+  - data.partner: Main customer/partner information (name, street, street2, city, state, zip, country, vat, phone, email)
+  - data.partner_invoice: Invoicing address (optional, uses same structure as partner)
+  - data.partner_shipping: Shipping address (optional, uses same structure as partner)
+  - data.metadata: Document metadata object:
+    - metadata.number: Document number (e.g., "SO-2024-001")
+    - metadata.date: Document date (ISO 8601 format)
+    - metadata.reference: Customer reference (e.g., customer PO number)
+    - metadata.salesperson: Salesperson name
+    - metadata.notes: Document notes
+    - metadata.terms_and_conditions: Terms text
+  - data.lines: Array of line items (LineItem[])
+  - data.totals: Totals object:
+    - totals.subtotal: Amount before tax
+    - totals.tax_amount: Total tax
+    - totals.total: Grand total
+    - totals.currency_symbol: Currency symbol
+    - totals.tax_lines: Array of tax breakdown (TaxLine[])
+  - data.state: Document state (optional - draft/sent/proforma/sale/done, defaults to Quotation)
+  - data.validity_date: Quote expiration date (optional, top-level per QuoteData)
+  - data.client_order_ref: Customer order reference (optional, top-level per QuoteData)
+  - data.commitment_date: Delivery commitment date (optional)
+  - data.signature: Base64 encoded signature image (optional)
+  - data.signed_by: Name of person who signed (optional)
+  - data.notes: Document notes text
+  - data.payment_terms: Payment terms object with note property
+  - data.fiscal_position_note: Fiscal position remarks
+  - currency: Currency object with symbol and position (computed from totals)
+  - hasDiscount: Boolean flag if any line has discount
+  - hasTaxes: Boolean flag if any line has taxes
+  
+  Dependencies:
+  - Partials: header.hbs, footer.hbs, line-items.hbs
+  - Styles: pdf.css
+  - Helpers: formatCurrency, formatDate, eq
+  
+  @version 1.0.1
+  @author Document Sidecar Service
+--}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>
+    {{!-- Dynamic title based on document state (state is optional, defaults to Quotation) --}}
+    {{#if (eq data.state "draft")}}Quotation{{else if (eq data.state "sent")}}Quotation{{else if (eq data.state "proforma")}}Pro-Forma Invoice{{else if (eq data.state "sale")}}Sales Order{{else if (eq data.state "done")}}Sales Order{{else}}Quotation{{/if}} - {{data.metadata.number}}
+  </title>
+  {{!-- Link to print-optimized PDF stylesheet --}}
+  <link rel="stylesheet" href="styles/pdf.css"/>
+</head>
+<body>
+  {{!-- Main Document Container --}}
+  <div class="document quote-document">
+    
+    {{!-- ============================================================
+         COMPANY HEADER SECTION
+         Uses shared header partial for consistent company branding
+         Passes company data for logo, name, address, contact info
+         ============================================================ --}}
+    {{> header company=data.company}}
+    
+    {{!-- ============================================================
+         CUSTOMER ADDRESS SECTION
+         Main partner address with VAT, plus conditional
+         invoicing and shipping addresses when different
+         ============================================================ --}}
+    <div class="address-section row mb-4">
+      {{!-- Main Customer/Partner Address --}}
+      <div class="col-6">
+        <div class="partner-address mb-0">
+          {{!-- Partner Name --}}
+          {{#if data.partner.name}}
+          <strong class="d-block">{{data.partner.name}}</strong>
+          {{/if}}
+          
+          {{!-- Partner Full Address (constructed from individual fields) --}}
+          {{#if data.partner.street}}
+          <span class="d-block">{{data.partner.street}}</span>
+          {{/if}}
+          {{#if data.partner.street2}}
+          <span class="d-block">{{data.partner.street2}}</span>
+          {{/if}}
+          {{#if data.partner.city}}
+          <span class="d-block">
+            {{data.partner.city}}{{#if data.partner.state}}, {{data.partner.state}}{{/if}}{{#if data.partner.zip}} {{data.partner.zip}}{{/if}}
+          </span>
+          {{/if}}
+          {{#if data.partner.country}}
+          <span class="d-block">{{data.partner.country}}</span>
+          {{/if}}
+          
+          {{!-- Partner VAT/Tax ID --}}
+          {{#if data.partner.vat}}
+          <p class="mb-0 mt-2">
+            {{#if data.company.vat_label}}{{data.company.vat_label}}{{else}}Tax ID{{/if}}: <span>{{data.partner.vat}}</span>
+          </p>
+          {{/if}}
+        </div>
+      </div>
+      
+      {{!-- Conditional Invoice/Shipping Address Column --}}
+      <div class="col-6">
+        {{!-- Show alternative addresses when different from main partner --}}
+        {{#if data.partner_invoice}}
+          {{#if data.partner_shipping}}
+            {{!-- Both invoice and shipping addresses exist --}}
+            {{!-- Invoice Address --}}
+            <div class="invoice-address mb-3">
+              <strong class="d-block">Invoicing Address</strong>
+              {{#if data.partner_invoice.name}}
+              <span class="d-block">{{data.partner_invoice.name}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.street}}
+              <span class="d-block">{{data.partner_invoice.street}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.street2}}
+              <span class="d-block">{{data.partner_invoice.street2}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.city}}
+              <span class="d-block">
+                {{data.partner_invoice.city}}{{#if data.partner_invoice.state}}, {{data.partner_invoice.state}}{{/if}}{{#if data.partner_invoice.zip}} {{data.partner_invoice.zip}}{{/if}}
+              </span>
+              {{/if}}
+              {{#if data.partner_invoice.country}}
+              <span class="d-block">{{data.partner_invoice.country}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.phone}}
+              <span class="d-block">Tel: {{data.partner_invoice.phone}}</span>
+              {{/if}}
+            </div>
+            {{!-- Shipping Address --}}
+            <div class="shipping-address mt-3">
+              <strong class="d-block">Shipping Address</strong>
+              {{#if data.partner_shipping.name}}
+              <span class="d-block">{{data.partner_shipping.name}}</span>
+              {{/if}}
+              {{#if data.partner_shipping.street}}
+              <span class="d-block">{{data.partner_shipping.street}}</span>
+              {{/if}}
+              {{#if data.partner_shipping.street2}}
+              <span class="d-block">{{data.partner_shipping.street2}}</span>
+              {{/if}}
+              {{#if data.partner_shipping.city}}
+              <span class="d-block">
+                {{data.partner_shipping.city}}{{#if data.partner_shipping.state}}, {{data.partner_shipping.state}}{{/if}}{{#if data.partner_shipping.zip}} {{data.partner_shipping.zip}}{{/if}}
+              </span>
+              {{/if}}
+              {{#if data.partner_shipping.country}}
+              <span class="d-block">{{data.partner_shipping.country}}</span>
+              {{/if}}
+              {{#if data.partner_shipping.phone}}
+              <span class="d-block">Tel: {{data.partner_shipping.phone}}</span>
+              {{/if}}
+            </div>
+          {{else}}
+            {{!-- Only invoice address is different --}}
+            <div class="invoice-address">
+              <strong class="d-block">Invoicing Address</strong>
+              {{#if data.partner_invoice.name}}
+              <span class="d-block">{{data.partner_invoice.name}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.street}}
+              <span class="d-block">{{data.partner_invoice.street}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.street2}}
+              <span class="d-block">{{data.partner_invoice.street2}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.city}}
+              <span class="d-block">
+                {{data.partner_invoice.city}}{{#if data.partner_invoice.state}}, {{data.partner_invoice.state}}{{/if}}{{#if data.partner_invoice.zip}} {{data.partner_invoice.zip}}{{/if}}
+              </span>
+              {{/if}}
+              {{#if data.partner_invoice.country}}
+              <span class="d-block">{{data.partner_invoice.country}}</span>
+              {{/if}}
+              {{#if data.partner_invoice.phone}}
+              <span class="d-block">Tel: {{data.partner_invoice.phone}}</span>
+              {{/if}}
+            </div>
+          {{/if}}
+        {{else if data.partner_shipping}}
+          {{!-- Only shipping address is different --}}
+          <div class="shipping-address">
+            <strong class="d-block">Shipping Address</strong>
+            {{#if data.partner_shipping.name}}
+            <span class="d-block">{{data.partner_shipping.name}}</span>
+            {{/if}}
+            {{#if data.partner_shipping.street}}
+            <span class="d-block">{{data.partner_shipping.street}}</span>
+            {{/if}}
+            {{#if data.partner_shipping.street2}}
+            <span class="d-block">{{data.partner_shipping.street2}}</span>
+            {{/if}}
+            {{#if data.partner_shipping.city}}
+            <span class="d-block">
+              {{data.partner_shipping.city}}{{#if data.partner_shipping.state}}, {{data.partner_shipping.state}}{{/if}}{{#if data.partner_shipping.zip}} {{data.partner_shipping.zip}}{{/if}}
+            </span>
+            {{/if}}
+            {{#if data.partner_shipping.country}}
+            <span class="d-block">{{data.partner_shipping.country}}</span>
+            {{/if}}
+            {{#if data.partner_shipping.phone}}
+            <span class="d-block">Tel: {{data.partner_shipping.phone}}</span>
+            {{/if}}
+          </div>
+        {{/if}}
+      </div>
+    </div>
+    
+    {{!-- ============================================================
+         DOCUMENT PAGE CONTENT
+         Contains title, metadata, line items, and totals
+         ============================================================ --}}
+    <div class="page">
+      
+      {{!-- ============================================================
+           DOCUMENT TITLE SECTION
+           Dynamic title based on document state:
+           - "Quotation #" for draft/sent state (or default when no state)
+           - "Order #" for confirmed orders (sale/done state)
+           - "Pro-Forma Invoice #" for proforma
+           State field is optional - defaults to Quotation if not present
+           ============================================================ --}}
+      <div class="document-title mb-4">
+        <h1 class="mb-0">
+          {{#if (eq data.state "draft")}}
+          <span>Quotation # </span>
+          {{else if (eq data.state "sent")}}
+          <span>Quotation # </span>
+          {{else if (eq data.state "proforma")}}
+          <span>Pro-Forma Invoice # </span>
+          {{else if (eq data.state "sale")}}
+          <span>Order # </span>
+          {{else if (eq data.state "done")}}
+          <span>Order # </span>
+          {{else}}
+          <span>Quotation # </span>
+          {{/if}}
+          <span>{{data.metadata.number}}</span>
+        </h1>
+      </div>
+      
+      {{!-- ============================================================
+           QUOTE METADATA SECTION
+           Displays key information in a row layout:
+           - Customer Reference (Your Reference)
+           - Quotation/Order/Issued Date
+           - Expiration Date (for quotations only)
+           - Delivery Date (Commitment Date)
+           - Salesperson
+           ============================================================ --}}
+      <div class="row mb-4" id="informations">
+        {{!-- Customer Reference (Your Reference) --}}
+        {{!-- Check both metadata.reference and top-level client_order_ref for compatibility --}}
+        {{#if data.metadata.reference}}
+        <div class="col" name="informations_reference">
+          <strong class="d-block">Your Reference</strong>
+          <div>{{data.metadata.reference}}</div>
+        </div>
+        {{else if data.client_order_ref}}
+        <div class="col" name="informations_reference">
+          <strong class="d-block">Your Reference</strong>
+          <div>{{data.client_order_ref}}</div>
+        </div>
+        {{/if}}
+        
+        {{!-- Document Date - Label changes based on state --}}
+        {{#if data.metadata.date}}
+        <div class="col" name="informations_date">
+          {{#if (eq data.state "proforma")}}
+          <strong class="d-block">Issued Date</strong>
+          {{else if (eq data.state "sale")}}
+          <strong class="d-block">Order Date</strong>
+          {{else if (eq data.state "done")}}
+          <strong class="d-block">Order Date</strong>
+          {{else}}
+          <strong class="d-block">Quotation Date</strong>
+          {{/if}}
+          <div>{{data.metadata.date}}</div>
+        </div>
+        {{/if}}
+        
+        {{!-- Expiration Date - Show for quotations (not confirmed orders) --}}
+        {{!-- validity_date is at top level per QuoteData interface --}}
+        {{#if data.validity_date}}
+        {{#unless (eq data.state "sale")}}
+        {{#unless (eq data.state "done")}}
+        <div class="col" name="expiration_date">
+          <strong class="d-block">Expiration</strong>
+          <div>{{data.validity_date}}</div>
+        </div>
+        {{/unless}}
+        {{/unless}}
+        {{/if}}
+        
+        {{!-- Delivery Date (Commitment Date) - top level field --}}
+        {{#if data.commitment_date}}
+        <div class="col" name="delivery_date">
+          <strong class="d-block">Delivery Date</strong>
+          <div>{{data.commitment_date}}</div>
+        </div>
+        {{/if}}
+        
+        {{!-- Salesperson --}}
+        {{#if data.metadata.salesperson}}
+        <div class="col">
+          <strong class="d-block">Salesperson</strong>
+          <div>{{data.metadata.salesperson}}</div>
+        </div>
+        {{/if}}
+      </div>
+      
+      {{!-- ============================================================
+           LINE ITEMS TABLE SECTION
+           Uses shared line-items partial for consistent rendering
+           Supports: products, sections, subsections, notes, combos
+           Shows: Description, Quantity, Unit Price, Discount, Taxes, Amount
+           ============================================================ --}}
+      {{> line-items 
+          lines=data.lines 
+          showPrices=true 
+          showDiscount=hasDiscount 
+          showTaxes=hasTaxes 
+          currency=currency 
+          sectionColspan=(calculateSectionColspan hasDiscount hasTaxes)
+      }}
+      
+      {{!-- ============================================================
+           TOTALS SECTION
+           Displays document totals with tax breakdown
+           Right-aligned using Bootstrap-like grid classes
+           ============================================================ --}}
+      <div class="clearfix" name="so_total_summary">
+        <div id="total" class="row mt-3" name="total">
+          <div class="col-6 ms-auto">
+            <table class="o_total_table table table-borderless">
+              <tbody>
+                {{!-- Untaxed Amount / Subtotal --}}
+                {{#if data.totals.subtotal}}
+                <tr>
+                  <td class="text-end">
+                    <span class="fw-bold">Subtotal</span>
+                  </td>
+                  <td class="text-end text-nowrap">
+                    <span>{{formatCurrency data.totals.subtotal currency}}</span>
+                  </td>
+                </tr>
+                {{/if}}
+                
+                {{!-- Tax Lines Breakdown --}}
+                {{#if data.totals.tax_lines}}
+                {{#each data.totals.tax_lines}}
+                <tr>
+                  <td class="text-end">
+                    {{!-- Tax Name/Label --}}
+                    <span>{{this.name}}</span>
+                  </td>
+                  <td class="text-end text-nowrap">
+                    {{!-- Tax Amount --}}
+                    <span>{{formatCurrency this.amount ../currency}}</span>
+                  </td>
+                </tr>
+                {{/each}}
+                {{/if}}
+                
+                {{!-- Grand Total --}}
+                {{#if data.totals.total}}
+                <tr class="border-top">
+                  <td class="text-end">
+                    <span class="fw-bolder">Total</span>
+                  </td>
+                  <td class="text-end text-nowrap">
+                    <span class="fw-bolder">{{formatCurrency data.totals.total currency}}</span>
+                  </td>
+                </tr>
+                {{/if}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      {{!-- ============================================================
+           SIGNATURE SECTION
+           Displays electronic signature when document has been signed
+           Shows signature image and signed_by name
+           ============================================================ --}}
+      {{#if data.signature}}
+      <div class="mt-4 signature-section" name="signature">
+        <div class="row">
+          <div class="col-6 offset-6">
+            <strong class="d-block">Signature</strong>
+            <div class="mt-2">
+              <img src="{{data.signature}}" alt="Customer Signature" style="max-height: 4cm; max-width: 8cm;"/>
+            </div>
+            {{#if data.signed_by}}
+            <div class="text-center mt-2">
+              <span>{{data.signed_by}}</span>
+            </div>
+            {{/if}}
+          </div>
+        </div>
+      </div>
+      {{/if}}
+      
+      {{!-- ============================================================
+           NOTES, PAYMENT TERMS, AND FISCAL NOTES SECTION
+           Displayed below the totals section
+           ============================================================ --}}
+      <div class="notes-section mt-3">
+        {{!-- Order Notes / Narration --}}
+        {{#if data.notes}}
+        <div class="order-note mb-2" name="order_note" style="text-align:justify;text-justify:inter-word;">
+          <span>{{data.notes}}</span>
+        </div>
+        {{/if}}
+        
+        {{!-- Payment Terms Note --}}
+        {{#if data.payment_terms}}
+        {{#if data.payment_terms.note}}
+        <p class="mb-2">
+          <span>{{data.payment_terms.note}}</span>
+        </p>
+        {{/if}}
+        {{/if}}
+        
+        {{!-- Fiscal Position Remark --}}
+        {{#if data.fiscal_position_note}}
+        <p id="fiscal_position_remark" class="mb-2">
+          <strong>Fiscal Position Remark:</strong>
+          <span>{{data.fiscal_position_note}}</span>
+        </p>
+        {{/if}}
+      </div>
+      
+    </div>{{!-- End .page --}}
+    
+    {{!-- ============================================================
+         DOCUMENT FOOTER SECTION
+         Uses shared footer partial for consistent footer layout
+         Includes terms & conditions, signature area, company notes
+         ============================================================ --}}
+    {{> footer 
+        notes=data.notes
+        termsAndConditions=data.terms_and_conditions
+        paymentTerms=data.payment_terms
+        fiscalNotes=data.fiscal_position_note
+        showSignature=false
+        companyName=data.company.name
+        currency=currency
+    }}
+    
+  </div>{{!-- End .document --}}
+</body>
+</html>

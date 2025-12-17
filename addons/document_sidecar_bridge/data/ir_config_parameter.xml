@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Document Sidecar Bridge - Configuration Parameters
+    
+    This file defines default system parameters for the document_sidecar_bridge module.
+    These parameters configure communication with the external TypeScript PDF sidecar service.
+    
+    Parameters:
+    - document_sidecar.enabled: Feature toggle (False by default - must be explicitly enabled)
+    - document_sidecar.url: Base URL of the sidecar service (http://localhost:3000 by default)
+    - document_sidecar.api_key: API authentication key (must be configured by admin)
+    - document_sidecar.secret_key: HMAC signing secret (must be configured by admin)
+    - document_sidecar.timeout: Request timeout in seconds (30 by default)
+    
+    IMPORTANT: The api_key and secret_key are empty placeholders and MUST be configured
+    by the administrator before enabling the sidecar integration.
+    
+    Using noupdate="1" ensures that administrator changes to these parameters
+    persist across module updates.
+-->
+<odoo noupdate="1">
+
+    <!-- Feature toggle - disabled by default for safety -->
+    <record id="document_sidecar_enabled" model="ir.config_parameter">
+        <field name="key">document_sidecar.enabled</field>
+        <field name="value">False</field>
+    </record>
+
+    <!-- Base URL of the sidecar service -->
+    <record id="document_sidecar_url" model="ir.config_parameter">
+        <field name="key">document_sidecar.url</field>
+        <field name="value">http://localhost:3000</field>
+    </record>
+
+    <!-- API authentication key - must be configured by admin before enabling -->
+    <record id="document_sidecar_api_key" model="ir.config_parameter">
+        <field name="key">document_sidecar.api_key</field>
+        <field name="value"></field>
+    </record>
+
+    <!-- HMAC signing secret - must be configured by admin before enabling -->
+    <record id="document_sidecar_secret_key" model="ir.config_parameter">
+        <field name="key">document_sidecar.secret_key</field>
+        <field name="value"></field>
+    </record>
+
+    <!-- Request timeout in seconds -->
+    <record id="document_sidecar_timeout" model="ir.config_parameter">
+        <field name="key">document_sidecar.timeout</field>
+        <field name="value">30</field>
+    </record>
+
+</odoo>

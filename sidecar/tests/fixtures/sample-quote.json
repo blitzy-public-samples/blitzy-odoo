@@ -1,0 +1,105 @@
+{
+  "request_id": "a8f5c9b2-e3d4-4f6a-b7c8-d9e0f1234567",
+  "report_type": "quote",
+  "record_ids": [42],
+  "data": {
+    "company": {
+      "name": "ACME Corporation",
+      "street": "123 Business Ave",
+      "street2": "Suite 500",
+      "city": "San Francisco",
+      "state": "CA",
+      "zip": "94102",
+      "country": "United States",
+      "vat": "US12-3456789",
+      "phone": "+1 (555) 123-4567",
+      "email": "sales@acme-corp.example.com",
+      "website": "https://www.acme-corp.example.com",
+      "logo_url": "https://www.acme-corp.example.com/logo.png"
+    },
+    "partner": {
+      "name": "Tech Solutions Inc.",
+      "street": "789 Enterprise Blvd",
+      "street2": "Floor 12",
+      "city": "Seattle",
+      "state": "WA",
+      "zip": "98101",
+      "country": "United States",
+      "vat": "US98-7654321",
+      "phone": "+1 (555) 987-6543",
+      "email": "procurement@techsolutions.example.com"
+    },
+    "lines": [
+      {
+        "sequence": 1,
+        "product_name": "Enterprise Software License",
+        "description": "Annual enterprise software license for cloud-based project management platform. Includes up to 100 users with unlimited projects.",
+        "quantity": 5,
+        "uom": "Seats",
+        "unit_price": 2500.00,
+        "discount": 10,
+        "tax_names": ["Sales Tax 8%"],
+        "subtotal": 11250.00
+      },
+      {
+        "sequence": 2,
+        "product_name": "Implementation Services",
+        "description": "Professional implementation services including system configuration, data migration, custom integrations, and go-live support.",
+        "quantity": 80,
+        "uom": "Hours",
+        "unit_price": 175.00,
+        "discount": 0,
+        "tax_names": ["Sales Tax 8%"],
+        "subtotal": 14000.00
+      },
+      {
+        "sequence": 3,
+        "product_name": "Annual Support & Maintenance",
+        "description": "Premium 24/7 technical support with guaranteed 4-hour response time. Includes all software updates and upgrades.",
+        "quantity": 1,
+        "uom": "Year",
+        "unit_price": 3500.00,
+        "discount": 0,
+        "tax_names": ["Sales Tax 8%"],
+        "subtotal": 3500.00
+      },
+      {
+        "sequence": 4,
+        "product_name": "On-Site Training Workshop",
+        "description": "Comprehensive hands-on training workshop for administrators and end users. Includes training materials and certification.",
+        "quantity": 2,
+        "uom": "Days",
+        "unit_price": 1250.00,
+        "discount": 5,
+        "tax_names": ["Sales Tax 8%"],
+        "subtotal": 2375.00
+      }
+    ],
+    "totals": {
+      "subtotal": 31125.00,
+      "tax_amount": 2490.00,
+      "total": 33615.00,
+      "currency_symbol": "$",
+      "tax_lines": [
+        {
+          "name": "Sales Tax 8%",
+          "base": 31125.00,
+          "amount": 2490.00
+        }
+      ]
+    },
+    "metadata": {
+      "number": "SO-2024-0042",
+      "date": "2024-01-20",
+      "reference": "RFQ-2024-001",
+      "salesperson": "Mike Johnson",
+      "notes": "This quotation is valid for 30 days from the date above. Pricing is based on the proposed scope and timeline discussed during our discovery session.",
+      "terms_and_conditions": "Payment Terms: 50% upon order confirmation, 50% upon project completion. All prices are subject to change after validity period. Delivery and implementation timeline: 2-4 weeks after order confirmation. Travel expenses for on-site services billed separately at cost."
+    }
+  },
+  "options": {
+    "page_size": "Letter",
+    "language": "en_US",
+    "copies": 1
+  }
+}

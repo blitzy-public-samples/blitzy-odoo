@@ -1,0 +1,429 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://blitzy-odoo.com/contracts/schemas/request.json",
+  "title": "Document Sidecar Request Schema",
+  "description": "Schema for validating PDF render requests to the document sidecar service. This schema mirrors the Zod schemas defined in sidecar/src/contracts/request.schema.ts and enables non-TypeScript services (like the Python Odoo bridge) to validate request payloads without a Zod dependency.",
+  "type": "object",
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the render request, used for request correlation and logging"
+    },
+    "report_type": {
+      "$ref": "#/definitions/ReportType",
+      "description": "The type of document report to generate"
+    },
+    "record_ids": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "minItems": 1,
+      "description": "Array of Odoo record IDs to render. Note: Currently only single-record rendering is supported; only the first ID will be processed"
+    },
+    "data": {
+      "$ref": "#/definitions/DocumentData",
+      "description": "Complete document data payload containing all information needed for rendering"
+    },
+    "options": {
+      "$ref": "#/definitions/RenderOptions",
+      "description": "Optional rendering configuration settings"
+    }
+  },
+  "required": ["request_id", "report_type", "record_ids", "data"],
+  "additionalProperties": false,
+  "definitions": {
+    "ReportType": {
+      "type": "string",
+      "enum": ["invoice", "quote", "delivery_slip"],
+      "description": "Supported document report types. Maps to Odoo report names: account.report_invoice -> invoice, sale.report_saleorder -> quote, stock.report_deliveryslip -> delivery_slip"
+    },
+    "PageSize": {
+      "type": "string",
+      "enum": ["A4", "Letter", "Legal"],
+      "default": "A4",
+      "description": "Supported page sizes for PDF generation. A4 (210mm x 297mm), Letter (8.5in x 11in), Legal (8.5in x 14in)"
+    },
+    "RenderOptions": {
+      "type": "object",
+      "description": "Optional configuration settings for document rendering",
+      "properties": {
+        "page_size": {
+          "$ref": "#/definitions/PageSize",
+          "description": "Page size for the generated PDF document"
+        },
+        "language": {
+          "type": "string",
+          "default": "en_US",
+          "description": "Language code for the document. Currently only en_US is supported (i18n is out of scope)"
+        },
+        "copies": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Number of copies to generate (for future use)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CompanyData": {
+      "type": "object",
+      "description": "Company information for document header and letterhead",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Legal company name"
+        },
+        "street": {
+          "type": "string",
+          "description": "Primary street address"
+        },
+        "street2": {
+          "type": "string",
+          "description": "Secondary street address line (suite, building, etc.)"
+        },
+        "city": {
+          "type": "string",
+          "description": "City name"
+        },
+        "state": {
+          "type": "string",
+          "description": "State or province name/code"
+        },
+        "zip": {
+          "type": "string",
+          "description": "Postal/ZIP code"
+        },
+        "country": {
+          "type": "string",
+          "description": "Country name"
+        },
+        "vat": {
+          "type": "string",
+          "description": "VAT/Tax identification number"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone number"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Contact email address"
+        },
+        "website": {
+          "type": "string",
+          "format": "uri",
+          "description": "Company website URL"
+        },
+        "logo_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to company logo image for document header"
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "PartnerData": {
+      "type": "object",
+      "description": "Customer or vendor partner information for document addressing",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Partner/customer name"
+        },
+        "street": {
+          "type": "string",
+          "description": "Primary street address"
+        },
+        "street2": {
+          "type": "string",
+          "description": "Secondary street address line"
+        },
+        "city": {
+          "type": "string",
+          "description": "City name"
+        },
+        "state": {
+          "type": "string",
+          "description": "State or province name/code"
+        },
+        "zip": {
+          "type": "string",
+          "description": "Postal/ZIP code"
+        },
+        "country": {
+          "type": "string",
+          "description": "Country name"
+        },
+        "vat": {
+          "type": "string",
+          "description": "VAT/Tax identification number"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone number"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Contact email address"
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "LineItem": {
+      "type": "object",
+      "description": "Individual line item for document (invoice line, sale order line, or delivery slip line)",
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "description": "Line sequence/order number for display ordering"
+        },
+        "product_name": {
+          "type": "string",
+          "description": "Product or service name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Additional description or notes for the line item"
+        },
+        "quantity": {
+          "type": "number",
+          "description": "Quantity ordered/delivered/invoiced"
+        },
+        "uom": {
+          "type": "string",
+          "description": "Unit of measure (e.g., 'Units', 'Hours', 'kg')"
+        },
+        "unit_price": {
+          "type": "number",
+          "description": "Price per unit. Note: For delivery slips, this is set to 0 as pricing is not shown"
+        },
+        "discount": {
+          "type": "number",
+          "default": 0,
+          "description": "Discount percentage applied to this line (0-100)"
+        },
+        "tax_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of tax names applied to this line item"
+        },
+        "subtotal": {
+          "type": "number",
+          "description": "Line subtotal after quantity and discount calculation. Note: For delivery slips, this is set to 0"
+        }
+      },
+      "required": ["sequence", "product_name", "quantity", "unit_price", "subtotal"],
+      "additionalProperties": false
+    },
+    "TaxLine": {
+      "type": "object",
+      "description": "Tax breakdown line showing individual tax amounts",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Tax name (e.g., 'VAT 20%', 'Sales Tax')"
+        },
+        "base": {
+          "type": "number",
+          "description": "Taxable base amount before tax calculation"
+        },
+        "amount": {
+          "type": "number",
+          "description": "Calculated tax amount"
+        }
+      },
+      "required": ["name", "base", "amount"],
+      "additionalProperties": false
+    },
+    "Totals": {
+      "type": "object",
+      "description": "Document totals section with subtotal, taxes, and grand total",
+      "properties": {
+        "subtotal": {
+          "type": "number",
+          "description": "Sum of all line subtotals before tax"
+        },
+        "tax_amount": {
+          "type": "number",
+          "description": "Total tax amount across all tax types"
+        },
+        "total": {
+          "type": "number",
+          "description": "Grand total including taxes (subtotal + tax_amount)"
+        },
+        "amount_paid": {
+          "type": "number",
+          "description": "Amount already paid (for invoices showing balance due)"
+        },
+        "amount_due": {
+          "type": "number",
+          "description": "Remaining amount due (total - amount_paid)"
+        },
+        "currency_symbol": {
+          "type": "string",
+          "default": "$",
+          "description": "Currency symbol for display (e.g., '$', '€', '£')"
+        },
+        "tax_lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TaxLine"
+          },
+          "description": "Detailed breakdown of taxes by tax type"
+        }
+      },
+      "required": ["subtotal", "tax_amount", "total"],
+      "additionalProperties": false
+    },
+    "DocumentMetadata": {
+      "type": "object",
+      "description": "Document metadata including reference numbers, dates, and terms",
+      "properties": {
+        "number": {
+          "type": "string",
+          "description": "Document reference number (invoice number, quotation number, delivery slip number)"
+        },
+        "date": {
+          "type": "string",
+          "description": "Document date (ISO format recommended: YYYY-MM-DD)"
+        },
+        "due_date": {
+          "type": "string",
+          "description": "Payment due date for invoices (ISO format recommended)"
+        },
+        "reference": {
+          "type": "string",
+          "description": "Customer reference or purchase order number"
+        },
+        "salesperson": {
+          "type": "string",
+          "description": "Name of the salesperson or account manager"
+        },
+        "payment_terms": {
+          "type": "string",
+          "description": "Payment terms description (e.g., 'Net 30', '2/10 Net 30')"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes or comments to display on the document"
+        },
+        "terms_and_conditions": {
+          "type": "string",
+          "description": "Legal terms and conditions text for quotes and invoices"
+        }
+      },
+      "required": ["number", "date"],
+      "additionalProperties": false
+    },
+    "DocumentData": {
+      "type": "object",
+      "description": "Complete document data structure containing all information needed to render a document",
+      "properties": {
+        "company": {
+          "$ref": "#/definitions/CompanyData",
+          "description": "Issuing company information"
+        },
+        "partner": {
+          "$ref": "#/definitions/PartnerData",
+          "description": "Customer/partner information"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LineItem"
+          },
+          "description": "Array of line items for the document"
+        },
+        "totals": {
+          "$ref": "#/definitions/Totals",
+          "description": "Document totals and tax breakdown"
+        },
+        "metadata": {
+          "$ref": "#/definitions/DocumentMetadata",
+          "description": "Document metadata and references"
+        }
+      },
+      "required": ["company", "partner", "lines", "totals", "metadata"],
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "request_id": "550e8400-e29b-41d4-a716-446655440000",
+      "report_type": "invoice",
+      "record_ids": [42],
+      "data": {
+        "company": {
+          "name": "Acme Corporation",
+          "street": "123 Business Ave",
+          "city": "New York",
+          "state": "NY",
+          "zip": "10001",
+          "country": "United States",
+          "vat": "US12-3456789",
+          "phone": "+1 (555) 123-4567",
+          "email": "billing@acme.com",
+          "website": "https://www.acme.com"
+        },
+        "partner": {
+          "name": "John Smith",
+          "street": "456 Customer Lane",
+          "city": "Los Angeles",
+          "state": "CA",
+          "zip": "90001",
+          "country": "United States",
+          "email": "john.smith@example.com"
+        },
+        "lines": [
+          {
+            "sequence": 1,
+            "product_name": "Professional Services",
+            "description": "Consulting services - December 2024",
+            "quantity": 10,
+            "uom": "Hours",
+            "unit_price": 150.00,
+            "discount": 0,
+            "tax_names": ["Sales Tax 8%"],
+            "subtotal": 1500.00
+          }
+        ],
+        "totals": {
+          "subtotal": 1500.00,
+          "tax_amount": 120.00,
+          "total": 1620.00,
+          "amount_paid": 0,
+          "amount_due": 1620.00,
+          "currency_symbol": "$",
+          "tax_lines": [
+            {
+              "name": "Sales Tax 8%",
+              "base": 1500.00,
+              "amount": 120.00
+            }
+          ]
+        },
+        "metadata": {
+          "number": "INV-2024-0042",
+          "date": "2024-12-15",
+          "due_date": "2025-01-14",
+          "salesperson": "Jane Doe",
+          "payment_terms": "Net 30"
+        }
+      },
+      "options": {
+        "page_size": "Letter",
+        "language": "en_US",
+        "copies": 1
+      }
+    }
+  ]
+}
