@@ -4,7 +4,7 @@ import uuid
 
 from odoo import fields, models, api
 from odoo.fields import Domain
-from odoo.tools.sql import SQL
+from odoo.tools import SQL
 from odoo.tools.urls import urljoin as url_join
 
 
@@ -58,19 +58,16 @@ class ResCompany(models.Model):
         if column_name != 'attendance_kiosk_key':
             super(ResCompany, self)._init_column(column_name)
         else:
-            # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
+            # SECURITY: SQL Injection - SQL.identifier() safely quotes table/column names
             self.env.cr.execute(SQL("SELECT id FROM %s WHERE attendance_kiosk_key IS NULL", SQL.identifier(self._table)))
             attendance_ids = self.env.cr.dictfetchall()
             values_args = [(attendance_id['id'], self._default_company_token()) for attendance_id in attendance_ids]
-            # SECURITY: SQL Injection - SQL.identifier() validates and quotes the table name;
-            # .code extracts the quoted string for use with execute_values (which requires a plain string query)
-            safe_table = SQL.identifier(self._table).code
             query = """
                 UPDATE {table}
                 SET attendance_kiosk_key = vals.token
                 FROM (VALUES %s) AS vals(id, token)
                 WHERE {table}.id = vals.id
-            """.format(table=safe_table)
+            """.format(table=self._table)
             self.env.cr.execute_values(query, values_args)
 
     def write(self, vals):
