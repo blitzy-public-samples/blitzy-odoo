@@ -7,6 +7,7 @@ from odoo import api, fields, models, _
 from odoo.exceptions import AccessError, UserError
 from odoo.fields import Domain
 from odoo.tools import create_index, make_identifier
+from odoo.tools.sql import SQL
 
 PHONE_REGEX_PATTERN = r'[\s\\./\(\)\-]'
 
@@ -181,22 +182,24 @@ class MailThreadPhone(models.AbstractModel):
         if operator not in ('in', 'not in'):
             return NotImplemented
 
+        # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
+        table_id = SQL.identifier(self._table)
         if operator == 'in':
-            query = """
+            query = SQL("""
                 SELECT m.id
                     FROM phone_blacklist bl
                     JOIN %s m
                     ON m.phone_sanitized = bl.number AND bl.active
-            """
+            """, table_id)
         else:
-            query = """
+            query = SQL("""
                 SELECT m.id
                     FROM %s m
                     LEFT JOIN phone_blacklist bl
                     ON m.phone_sanitized = bl.number AND bl.active
                     WHERE bl.id IS NULL
-            """
-        self.env.cr.execute(query % self._table)
+            """, table_id)
+        self.env.cr.execute(query)
         res = self.env.cr.fetchall()
         return [('id', 'in', [r[0] for r in res])]
 

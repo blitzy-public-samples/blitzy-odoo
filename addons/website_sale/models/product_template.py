@@ -52,7 +52,8 @@ class ProductTemplate(models.Model):
         As we don't resequence the whole tree (as `sequence` does), this field
         might have negative value.
         """
-        self.env.cr.execute('SELECT MAX(website_sequence) FROM %s' % self._table)
+        # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
+        self.env.cr.execute(SQL('SELECT MAX(website_sequence) FROM %s', SQL.identifier(self._table)))
         max_sequence = self.env.cr.fetchone()[0]
         if max_sequence is None:
             return 10000
@@ -761,15 +762,17 @@ class ProductTemplate(models.Model):
         # we need to set the default row by row for this column
         if column_name == "website_sequence":
             _logger.debug("Table '%s': setting default value of new column %s to unique values for each row", self._table, column_name)
-            self.env.cr.execute("SELECT id FROM %s WHERE website_sequence IS NULL" % self._table)
+            # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
+            self.env.cr.execute(SQL("SELECT id FROM %s WHERE website_sequence IS NULL", SQL.identifier(self._table)))
             prod_tmpl_ids = self.env.cr.dictfetchall()
             max_seq = self._default_website_sequence()
-            query = f"""
-                UPDATE {self._table}
+            table_id = SQL.identifier(self._table)
+            query = SQL("""
+                UPDATE %s
                 SET website_sequence = p.web_seq
-                FROM (VALUES %s) AS p(p_id, web_seq)
+                FROM (VALUES %%s) AS p(p_id, web_seq)
                 WHERE id = p.p_id
-            """
+            """, table_id)
             values_args = [(prod_tmpl['id'], max_seq + i * 5) for i, prod_tmpl in enumerate(prod_tmpl_ids)]
             self.env.cr.execute_values(query, values_args)
         else:

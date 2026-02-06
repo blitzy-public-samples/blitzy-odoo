@@ -15,7 +15,8 @@ class ProductTemplate(models.Model):
 
     @api.model
     def _default_pos_sequence(self):
-        self.env.cr.execute('SELECT MAX(pos_sequence) FROM %s' % self._table)
+        # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
+        self.env.cr.execute(SQL('SELECT MAX(pos_sequence) FROM %s', SQL.identifier(self._table)))
         max_sequence = self.env.cr.fetchone()[0]
         if max_sequence is None:
             return 1

@@ -4,6 +4,7 @@ import logging
 
 from odoo import api, fields, models
 from odoo.addons.product.models.product_template import PRICE_CONTEXT_KEYS
+from odoo.tools.sql import SQL
 
 _logger = logging.getLogger(__name__)
 
@@ -62,7 +63,8 @@ class EventTypeTicket(models.Model):
             return super()._init_column(column_name)
 
         # fetch void columns
-        self.env.cr.execute("SELECT id FROM %s WHERE product_id IS NULL" % self._table)
+        # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
+        self.env.cr.execute(SQL("SELECT id FROM %s WHERE product_id IS NULL", SQL.identifier(self._table)))
         ticket_type_ids = self.env.cr.fetchall()
         if not ticket_type_ids:
             return
