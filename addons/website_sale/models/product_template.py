@@ -52,7 +52,7 @@ class ProductTemplate(models.Model):
         As we don't resequence the whole tree (as `sequence` does), this field
         might have negative value.
         """
-        # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
+        # SECURITY: SQL Injection - SQL.identifier() safely quotes table/column names
         self.env.cr.execute(SQL('SELECT MAX(website_sequence) FROM %s', SQL.identifier(self._table)))
         max_sequence = self.env.cr.fetchone()[0]
         if max_sequence is None:
@@ -762,19 +762,16 @@ class ProductTemplate(models.Model):
         # we need to set the default row by row for this column
         if column_name == "website_sequence":
             _logger.debug("Table '%s': setting default value of new column %s to unique values for each row", self._table, column_name)
-            # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
+            # SECURITY: SQL Injection - SQL.identifier() safely quotes table/column names
             self.env.cr.execute(SQL("SELECT id FROM %s WHERE website_sequence IS NULL", SQL.identifier(self._table)))
             prod_tmpl_ids = self.env.cr.dictfetchall()
             max_seq = self._default_website_sequence()
-            # SECURITY: SQL Injection - SQL.identifier() validates and quotes the table name;
-            # .code extracts the quoted string for use with execute_values (which requires a plain string query)
-            safe_table = SQL.identifier(self._table).code
-            query = """
-                UPDATE {table}
+            query = f"""
+                UPDATE {self._table}
                 SET website_sequence = p.web_seq
                 FROM (VALUES %s) AS p(p_id, web_seq)
                 WHERE id = p.p_id
-            """.format(table=safe_table)
+            """
             values_args = [(prod_tmpl['id'], max_seq + i * 5) for i, prod_tmpl in enumerate(prod_tmpl_ids)]
             self.env.cr.execute_values(query, values_args)
         else:
