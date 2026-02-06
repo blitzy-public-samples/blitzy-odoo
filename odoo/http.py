@@ -2131,11 +2131,14 @@ class Request:
 
         cookie_sid = self.cookies.get('session_id')
         if sess.is_dirty or cookie_sid != sess.sid:
+            # SECURITY: Session Hardening - Secure and SameSite flags prevent cookie theft and CSRF
             self.future_response.set_cookie(
                 'session_id',
                 sess.sid,
                 max_age=get_session_max_inactivity(env),
-                httponly=True
+                httponly=True,
+                secure=self.httprequest.scheme == 'https',
+                samesite='Lax',
             )
 
     def _set_request_dispatcher(self, rule):
@@ -2454,7 +2457,8 @@ class HttpDispatcher(Dispatcher):
             response = self.request.redirect_query('/web/login', {'redirect': self.request.httprequest.full_path})
             if was_connected:
                 root.session_store.rotate(session, self.request.env)
-                response.set_cookie('session_id', session.sid, max_age=get_session_max_inactivity(self.request.env), httponly=True)
+                # SECURITY: Session Hardening - Secure and SameSite flags prevent cookie theft and CSRF
+                response.set_cookie('session_id', session.sid, max_age=get_session_max_inactivity(self.request.env), httponly=True, secure=self.request.httprequest.scheme == 'https', samesite='Lax')
             return response
 
         if isinstance(exc, HTTPException):
@@ -2729,6 +2733,8 @@ class Application:
     def set_csp(self, response):
         headers = response.headers
         headers['X-Content-Type-Options'] = 'nosniff'
+        # SECURITY: Clickjacking Prevention - X-Frame-Options blocks cross-origin iframe embedding
+        headers['X-Frame-Options'] = 'SAMEORIGIN'
 
         if 'Content-Security-Policy' in headers:
             return

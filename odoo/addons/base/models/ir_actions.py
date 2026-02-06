@@ -17,7 +17,7 @@ from odoo import api, fields, models, tools
 from odoo.exceptions import AccessError, MissingError, UserError, ValidationError
 from odoo.fields import Command, Domain
 from odoo.http import request
-from odoo.tools import _, frozendict, get_lang
+from odoo.tools import _, frozendict, get_lang, SQL
 from odoo.tools.float_utils import float_compare
 from odoo.tools.misc import get_diff, unquote
 from odoo.tools.safe_eval import safe_eval, test_python_expr
@@ -373,7 +373,8 @@ class IrActionsAct_Window(models.Model):
     @api.model
     @tools.ormcache()
     def _existing(self):
-        self.env.cr.execute("SELECT id FROM %s" % self._table)
+        # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
+        self.env.cr.execute(SQL("SELECT id FROM %s", SQL.identifier(self._table)))
         return {row[0] for row in self.env.cr.fetchall()}
 
     def _get_readable_fields(self):

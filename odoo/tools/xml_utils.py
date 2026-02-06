@@ -101,7 +101,8 @@ def _check_with_xsd(tree_or_str, stream, env=None, prefix=None):
     """
     if not isinstance(tree_or_str, etree._Element):
         tree_or_str = etree.fromstring(tree_or_str)
-    parser = etree.XMLParser()
+    # SECURITY: XXE Prevention - resolve_entities=False blocks external entity injection in XSD validation
+    parser = etree.XMLParser(resolve_entities=False)
     if env:
         parser.resolvers.add(odoo_resolver(env, prefix))
         if isinstance(stream, str) and stream.endswith('.xsd'):

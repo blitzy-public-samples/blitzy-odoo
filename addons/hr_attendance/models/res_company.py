@@ -4,6 +4,7 @@ import uuid
 
 from odoo import fields, models, api
 from odoo.fields import Domain
+from odoo.tools import SQL
 from odoo.tools.urls import urljoin as url_join
 
 
@@ -57,7 +58,8 @@ class ResCompany(models.Model):
         if column_name != 'attendance_kiosk_key':
             super(ResCompany, self)._init_column(column_name)
         else:
-            self.env.cr.execute("SELECT id FROM %s WHERE attendance_kiosk_key IS NULL" % self._table)
+            # SECURITY: SQL Injection - SQL.identifier() safely quotes table/column names
+            self.env.cr.execute(SQL("SELECT id FROM %s WHERE attendance_kiosk_key IS NULL", SQL.identifier(self._table)))
             attendance_ids = self.env.cr.dictfetchall()
             values_args = [(attendance_id['id'], self._default_company_token()) for attendance_id in attendance_ids]
             query = """

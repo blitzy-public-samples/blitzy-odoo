@@ -6,7 +6,7 @@ import re
 from odoo import api, fields, models, _
 from odoo.exceptions import AccessError, UserError
 from odoo.fields import Domain
-from odoo.tools import create_index, make_identifier
+from odoo.tools import create_index, make_identifier, SQL
 
 PHONE_REGEX_PATTERN = r'[\s\\./\(\)\-]'
 
@@ -196,7 +196,8 @@ class MailThreadPhone(models.AbstractModel):
                     ON m.phone_sanitized = bl.number AND bl.active
                     WHERE bl.id IS NULL
             """
-        self.env.cr.execute(query % self._table)
+        # SECURITY: SQL Injection - SQL.identifier() safely quotes table/column names
+        self.env.cr.execute(SQL(query, SQL.identifier(self._table)))
         res = self.env.cr.fetchall()
         return [('id', 'in', [r[0] for r in res])]
 

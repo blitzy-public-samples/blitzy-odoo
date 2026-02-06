@@ -130,56 +130,69 @@ class BasePartnerMergeAutomaticWizard(models.TransientModel):
             if 'base_partner_merge_' in table:  # ignore two tables
                 continue
 
+            # SECURITY: SQL Injection - parameterized query for information_schema lookup
             # get list of columns of current table (exept the current fk column)
-            query = "SELECT column_name FROM information_schema.columns WHERE table_name LIKE '%s'" % (table)
-            self.env.cr.execute(query, ())
+            self.env.cr.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name LIKE %s",
+                (table,),
+            )
             columns = []
             for data in self.env.cr.fetchall():
                 if data[0] != column:
                     columns.append(data[0])
 
+            # SECURITY: SQL Injection - SQL.identifier() safely quotes table/column names
             # do the update for the current table/column in SQL
-            query_dic = {
-                'table': table,
-                'column': column,
-                'value': columns[0],
-            }
+            table_id = SQL.identifier(table)
+            column_id = SQL.identifier(column)
 
-            self.env.cr.execute('SELECT FROM "%(table)s" WHERE "%(column)s" IN %%s LIMIT 1' % query_dic,
-                                (tuple(src_records.ids),))
+            self.env.cr.execute(SQL(
+                'SELECT FROM %s WHERE %s IN %s LIMIT 1',
+                table_id, column_id, tuple(src_records.ids),
+            ))
             if self.env.cr.fetchone() is None:
                 continue  # no record
 
             if len(columns) <= 1:
                 # unique key treated
-                query = """
-                    UPDATE "%(table)s" as ___tu
-                    SET "%(column)s" = %%s
-                    WHERE
-                        "%(column)s" = %%s AND
-                        NOT EXISTS (
-                            SELECT 1
-                            FROM "%(table)s" as ___tw
-                            WHERE
-                                "%(column)s" = %%s AND
-                                ___tu.%(value)s = ___tw.%(value)s
-                        )""" % query_dic
+                value_id = SQL.identifier(columns[0])
                 for record in src_records:
-                    self.env.cr.execute(query, (dst_record.id, record.id, dst_record.id))
+                    self.env.cr.execute(SQL("""
+                        UPDATE %s as ___tu
+                        SET %s = %s
+                        WHERE
+                            %s = %s AND
+                            NOT EXISTS (
+                                SELECT 1
+                                FROM %s as ___tw
+                                WHERE
+                                    %s = %s AND
+                                    ___tu.%s = ___tw.%s
+                            )""", table_id, column_id, dst_record.id,
+                        column_id, record.id,
+                        table_id, column_id, dst_record.id,
+                        value_id, value_id,
+                    ))
             elif not self._has_check_or_unique_constraint(table, column):
                 # if there is no CHECK or UNIQUE constraint, we do it without a savepoint
-                query = 'UPDATE "%(table)s" SET "%(column)s" = %%s WHERE "%(column)s" IN %%s' % query_dic
-                self.env.cr.execute(query, (dst_record.id, tuple(src_records.ids)))
+                self.env.cr.execute(SQL(
+                    'UPDATE %s SET %s = %s WHERE %s IN %s',
+                    table_id, column_id, dst_record.id, column_id, tuple(src_records.ids),
+                ))
             else:
                 try:
                     with mute_logger('odoo.sql_db'), self.env.cr.savepoint():
-                        query = 'UPDATE "%(table)s" SET "%(column)s" = %%s WHERE "%(column)s" IN %%s' % query_dic
-                        self.env.cr.execute(query, (dst_record.id, tuple(src_records.ids)))
+                        self.env.cr.execute(SQL(
+                            'UPDATE %s SET %s = %s WHERE %s IN %s',
+                            table_id, column_id, dst_record.id, column_id, tuple(src_records.ids),
+                        ))
                 except psycopg2.Error:
                     # updating fails, most likely due to a violated unique constraint
                     # keeping record with nonexistent partner_id is useless, better delete it
-                    query = 'DELETE FROM "%(table)s" WHERE "%(column)s" IN %%s' % query_dic
-                    self.env.cr.execute(query, (tuple(src_records.ids),))
+                    self.env.cr.execute(SQL(
+                        'DELETE FROM %s WHERE %s IN %s',
+                        table_id, column_id, tuple(src_records.ids),
+                    ))
 
     @api.model
     def _update_reference_fields_generic(self, referenced_model, src_records, dst_record, additional_update_records=None):

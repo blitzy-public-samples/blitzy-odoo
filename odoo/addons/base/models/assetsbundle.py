@@ -438,7 +438,8 @@ class AssetsBundle(object):
 
         :return a list of blocks
         """
-        parser = etree.XMLParser(ns_clean=True, recover=True, remove_comments=True)
+        # SECURITY: XXE Prevention - resolve_entities=False blocks external entity injection
+        parser = etree.XMLParser(ns_clean=True, recover=True, remove_comments=True, resolve_entities=False)
 
         blocks = []
         block = None
