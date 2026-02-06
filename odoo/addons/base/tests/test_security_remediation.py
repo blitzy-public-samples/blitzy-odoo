@@ -146,21 +146,26 @@ class TestSQLInjection(BaseCase):
         table_id = SQL.identifier(table)
         column_id = SQL.identifier(column)
 
-        # Test SELECT pattern (line ~148 in base_partner_merge.py)
-        query = SQL('SELECT FROM %s WHERE %s IN %%s LIMIT 1', table_id, column_id)
+        # Test SELECT pattern (line ~149 in base_partner_merge.py)
+        # All params must be embedded in the SQL object (no separate params to cr.execute)
+        src_ids = (1, 2, 3)
+        query = SQL('SELECT FROM %s WHERE %s IN %s LIMIT 1', table_id, column_id, src_ids)
         self.assertIn('"res_partner"', query.code)
         self.assertIn('"partner_id"', query.code)
-        self.assertEqual(query.params, [])
+        self.assertEqual(query.params, [src_ids])
 
-        # Test UPDATE pattern
-        query = SQL('UPDATE %s SET %s = %%s WHERE %s IN %%s', table_id, column_id, column_id)
+        # Test UPDATE pattern — all value params embedded alongside identifiers
+        dst_id = 10
+        query = SQL('UPDATE %s SET %s = %s WHERE %s IN %s', table_id, column_id, dst_id, column_id, src_ids)
         self.assertIn('"res_partner"', query.code)
         self.assertEqual(query.code.count('"partner_id"'), 2)
+        self.assertEqual(query.params, [dst_id, src_ids])
 
-        # Test DELETE pattern
-        query = SQL('DELETE FROM %s WHERE %s IN %%s', table_id, column_id)
+        # Test DELETE pattern — tuple param embedded in SQL object
+        query = SQL('DELETE FROM %s WHERE %s IN %s', table_id, column_id, src_ids)
         self.assertIn('"res_partner"', query.code)
         self.assertIn('"partner_id"', query.code)
+        self.assertEqual(query.params, [src_ids])
 
     def test_information_schema_parameterized(self):
         """Verify that information_schema queries use parameterized statements.

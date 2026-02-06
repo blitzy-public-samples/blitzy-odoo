@@ -54,8 +54,8 @@ def _update_nogap(self, number_increment):
     self.flush_recordset(['number_next'])
     number_next = self.number_next
     # SECURITY: SQL Injection - SQL.identifier() safely quotes table names
-    self.env.cr.execute(SQL("SELECT number_next FROM %s WHERE id=%%s FOR UPDATE NOWAIT", SQL.identifier(self._table)), [self.id])
-    self.env.cr.execute(SQL("UPDATE %s SET number_next=number_next+%%s WHERE id=%%s", SQL.identifier(self._table)), (number_increment, self.id))
+    self.env.cr.execute(SQL("SELECT number_next FROM %s WHERE id=%s FOR UPDATE NOWAIT", SQL.identifier(self._table), self.id))
+    self.env.cr.execute(SQL("UPDATE %s SET number_next=number_next+%s WHERE id=%s", SQL.identifier(self._table), number_increment, self.id))
     self.invalidate_recordset(['number_next'])
     return number_next
 

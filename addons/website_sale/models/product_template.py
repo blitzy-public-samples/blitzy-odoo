@@ -766,13 +766,15 @@ class ProductTemplate(models.Model):
             self.env.cr.execute(SQL("SELECT id FROM %s WHERE website_sequence IS NULL", SQL.identifier(self._table)))
             prod_tmpl_ids = self.env.cr.dictfetchall()
             max_seq = self._default_website_sequence()
-            table_id = SQL.identifier(self._table)
-            query = SQL("""
-                UPDATE %s
+            # SECURITY: SQL Injection - SQL.identifier() validates and quotes the table name;
+            # .code extracts the quoted string for use with execute_values (which requires a plain string query)
+            safe_table = SQL.identifier(self._table).code
+            query = """
+                UPDATE {table}
                 SET website_sequence = p.web_seq
-                FROM (VALUES %%s) AS p(p_id, web_seq)
+                FROM (VALUES %s) AS p(p_id, web_seq)
                 WHERE id = p.p_id
-            """, table_id)
+            """.format(table=safe_table)
             values_args = [(prod_tmpl['id'], max_seq + i * 5) for i, prod_tmpl in enumerate(prod_tmpl_ids)]
             self.env.cr.execute_values(query, values_args)
         else:

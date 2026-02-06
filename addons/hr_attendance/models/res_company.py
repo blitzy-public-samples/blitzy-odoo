@@ -62,13 +62,15 @@ class ResCompany(models.Model):
             self.env.cr.execute(SQL("SELECT id FROM %s WHERE attendance_kiosk_key IS NULL", SQL.identifier(self._table)))
             attendance_ids = self.env.cr.dictfetchall()
             values_args = [(attendance_id['id'], self._default_company_token()) for attendance_id in attendance_ids]
-            table_id = SQL.identifier(self._table)
-            query = SQL("""
-                UPDATE %s
+            # SECURITY: SQL Injection - SQL.identifier() validates and quotes the table name;
+            # .code extracts the quoted string for use with execute_values (which requires a plain string query)
+            safe_table = SQL.identifier(self._table).code
+            query = """
+                UPDATE {table}
                 SET attendance_kiosk_key = vals.token
-                FROM (VALUES %%s) AS vals(id, token)
-                WHERE %s.id = vals.id
-            """, table_id, table_id)
+                FROM (VALUES %s) AS vals(id, token)
+                WHERE {table}.id = vals.id
+            """.format(table=safe_table)
             self.env.cr.execute_values(query, values_args)
 
     def write(self, vals):

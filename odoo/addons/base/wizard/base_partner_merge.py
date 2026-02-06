@@ -147,45 +147,52 @@ class BasePartnerMergeAutomaticWizard(models.TransientModel):
             column_id = SQL.identifier(column)
 
             self.env.cr.execute(SQL(
-                'SELECT FROM %s WHERE %s IN %%s LIMIT 1',
-                table_id, column_id,
-            ), (tuple(src_records.ids),))
+                'SELECT FROM %s WHERE %s IN %s LIMIT 1',
+                table_id, column_id, tuple(src_records.ids),
+            ))
             if self.env.cr.fetchone() is None:
                 continue  # no record
 
             if len(columns) <= 1:
                 # unique key treated
                 value_id = SQL.identifier(columns[0])
-                query = SQL("""
-                    UPDATE %s as ___tu
-                    SET %s = %%s
-                    WHERE
-                        %s = %%s AND
-                        NOT EXISTS (
-                            SELECT 1
-                            FROM %s as ___tw
-                            WHERE
-                                %s = %%s AND
-                                ___tu.%s = ___tw.%s
-                        )""", table_id, column_id, column_id,
-                    table_id, column_id, value_id, value_id,
-                )
                 for record in src_records:
-                    self.env.cr.execute(query, (dst_record.id, record.id, dst_record.id))
+                    self.env.cr.execute(SQL("""
+                        UPDATE %s as ___tu
+                        SET %s = %s
+                        WHERE
+                            %s = %s AND
+                            NOT EXISTS (
+                                SELECT 1
+                                FROM %s as ___tw
+                                WHERE
+                                    %s = %s AND
+                                    ___tu.%s = ___tw.%s
+                            )""", table_id, column_id, dst_record.id,
+                        column_id, record.id,
+                        table_id, column_id, dst_record.id,
+                        value_id, value_id,
+                    ))
             elif not self._has_check_or_unique_constraint(table, column):
                 # if there is no CHECK or UNIQUE constraint, we do it without a savepoint
-                query = SQL('UPDATE %s SET %s = %%s WHERE %s IN %%s', table_id, column_id, column_id)
-                self.env.cr.execute(query, (dst_record.id, tuple(src_records.ids)))
+                self.env.cr.execute(SQL(
+                    'UPDATE %s SET %s = %s WHERE %s IN %s',
+                    table_id, column_id, dst_record.id, column_id, tuple(src_records.ids),
+                ))
             else:
                 try:
                     with mute_logger('odoo.sql_db'), self.env.cr.savepoint():
-                        query = SQL('UPDATE %s SET %s = %%s WHERE %s IN %%s', table_id, column_id, column_id)
-                        self.env.cr.execute(query, (dst_record.id, tuple(src_records.ids)))
+                        self.env.cr.execute(SQL(
+                            'UPDATE %s SET %s = %s WHERE %s IN %s',
+                            table_id, column_id, dst_record.id, column_id, tuple(src_records.ids),
+                        ))
                 except psycopg2.Error:
                     # updating fails, most likely due to a violated unique constraint
                     # keeping record with nonexistent partner_id is useless, better delete it
-                    query = SQL('DELETE FROM %s WHERE %s IN %%s', table_id, column_id)
-                    self.env.cr.execute(query, (tuple(src_records.ids),))
+                    self.env.cr.execute(SQL(
+                        'DELETE FROM %s WHERE %s IN %s',
+                        table_id, column_id, tuple(src_records.ids),
+                    ))
 
     @api.model
     def _update_reference_fields_generic(self, referenced_model, src_records, dst_record, additional_update_records=None):
