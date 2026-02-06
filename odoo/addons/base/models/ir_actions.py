@@ -17,11 +17,10 @@ from odoo import api, fields, models, tools
 from odoo.exceptions import AccessError, MissingError, UserError, ValidationError
 from odoo.fields import Command, Domain
 from odoo.http import request
-from odoo.tools import _, frozendict, get_lang
+from odoo.tools import _, frozendict, get_lang, SQL
 from odoo.tools.float_utils import float_compare
 from odoo.tools.misc import get_diff, unquote
 from odoo.tools.safe_eval import safe_eval, test_python_expr
-from odoo.tools.sql import SQL
 
 _logger = logging.getLogger(__name__)
 _server_action_logger = _logger.getChild("server_action_safe_eval")
