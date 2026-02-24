@@ -1,0 +1,5 @@
+# S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+[submodule "localstack"]
+	path = localstack
+	url = https://github.com/localstack/localstack.git
+	branch = main
