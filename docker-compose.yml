@@ -1,0 +1,16 @@
+# S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+# Optional convenience file for local development and testing.
+# Usage: docker-compose up -d
+services:
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
