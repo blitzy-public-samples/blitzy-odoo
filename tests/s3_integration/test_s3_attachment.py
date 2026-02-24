@@ -116,7 +116,7 @@ def test_file_write(s3_client, s3_bucket):
     AAP §0.5.1 — ≤ 500 ms.
     """
     blob = b"test_file_write_data"  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
-    checksum, fname = _make_key(blob)
+    _checksum, fname = _make_key(blob)
 
     t0 = time.monotonic()
     s3_client.put_object(Bucket=BUCKET_NAME, Key=fname, Body=blob)
@@ -178,7 +178,7 @@ def test_file_delete(s3_client, s3_bucket):
     AAP §0.3.1 — ≤ 500 ms for the delete operation.
     """
     blob = b"test_file_delete_data"  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
-    checksum, fname = _make_key(blob)
+    _checksum, fname = _make_key(blob)
 
     # Seed & verify presence
     s3_client.put_object(Bucket=BUCKET_NAME, Key=fname, Body=blob)

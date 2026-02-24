@@ -1,6 +1,7 @@
 # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
 """Pytest fixtures for S3 integration tests against LocalStack."""
 
+import contextlib
 import os
 import time
 
@@ -11,10 +12,36 @@ import requests
 
 # Optional: attempt to import LocalStack testing utilities from the git submodule.
 # These are not required — the core fixtures defined here are fully self-contained.
-try:
+with contextlib.suppress(ImportError):
     from localstack.testing.pytest import fixtures  # noqa: F401
-except ImportError:
-    pass  # LocalStack test utilities not available; core fixtures are self-contained
+
+
+@pytest.fixture(autouse=True, scope="session")
+def load_registry():
+    """Override pytest-odoo's ``load_registry`` to prevent Odoo ORM initialization.
+
+    The S3 integration tests are standalone and do **not** require Odoo's
+    registry or database.  The ``pytest-odoo`` plugin (installed per
+    AAP §0.6.1) registers an ``autouse=True, scope=session`` fixture of the
+    same name that calls ``odoo.modules.registry.Registry(db_name)``; this
+    override shadows it so that the S3 test session can run without an Odoo
+    server.
+    """
+    # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+    yield
+
+
+@pytest.fixture(autouse=True, scope="module")
+def enable_odoo_test_flag():
+    """Override pytest-odoo's ``enable_odoo_test_flag`` to avoid accessing Odoo config.
+
+    The ``pytest-odoo`` plugin registers a ``scope=module, autouse=True``
+    fixture that sets ``odoo.tools.config['test_enable']``.  Since the S3
+    integration tests do not use Odoo's tool chain, this override provides
+    a no-op replacement preventing the ``AttributeError`` on ``odoo.tools``.
+    """
+    # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+    yield
 
 
 @pytest.fixture(autouse=True, scope="session")
