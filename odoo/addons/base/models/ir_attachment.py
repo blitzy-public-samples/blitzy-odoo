@@ -9,6 +9,7 @@ import mimetypes
 import os
 import psycopg2
 import re
+import threading
 import uuid
 import warnings
 import werkzeug
@@ -32,31 +33,41 @@ SECURITY_FIELDS = ('res_model', 'res_id', 'create_uid', 'public', 'res_field')
 
 # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
 _s3_client = None
+_s3_client_lock = threading.Lock()
 
 
 def _get_s3_client():
     """Return a lazily-initialized boto3 S3 client, cached at module level."""
     global _s3_client
     if _s3_client is None:
-        _s3_client = boto3.client(
-            's3',
-            endpoint_url=os.environ.get('AWS_ENDPOINT_URL', 'http://localhost:4566'),
-            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-            region_name=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'),
-        )
+        with _s3_client_lock:
+            if _s3_client is None:
+                _s3_client = boto3.client(
+                    's3',
+                    endpoint_url=os.environ.get('AWS_ENDPOINT_URL', 'http://localhost:4566'),
+                    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+                    region_name=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'),
+                )
     return _s3_client
 
 
 # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
 def _ensure_s3_bucket(s3, bucket):
-    """Create the S3 bucket if it does not already exist (idempotent)."""
+    """Create the S3 bucket if it does not already exist (idempotent).
+
+    Uses a function attribute to ensure the create_bucket API call is only
+    issued once per process, skipping redundant calls on subsequent writes.
+    """
+    if getattr(_ensure_s3_bucket, '_done', False):
+        return
     try:
         s3.create_bucket(Bucket=bucket)
     except botocore.exceptions.ClientError as e:
         error_code = e.response['Error']['Code']
         if error_code not in ('BucketAlreadyOwnedByYou', 'BucketAlreadyExists'):
             raise
+    _ensure_s3_bucket._done = True
 
 
 def condition_values(model, field_name, domain):
@@ -169,7 +180,7 @@ class IrAttachment(models.Model):
                 s3 = _get_s3_client()
                 bucket = os.environ.get('AWS_S3_BUCKET', 'odoo-attachments')
                 response = s3.get_object(Bucket=bucket, Key=fname)
-                return response['Body'].read()
+                return response['Body'].read(size)
             except Exception:
                 _logger.info("_file_read reading S3 key %s", fname, exc_info=True)
             return b''
@@ -190,7 +201,11 @@ class IrAttachment(models.Model):
             bucket = os.environ.get('AWS_S3_BUCKET', 'odoo-attachments')
             s3 = _get_s3_client()
             _ensure_s3_bucket(s3, bucket)
-            s3.put_object(Bucket=bucket, Key=fname, Body=bin_value)
+            try:
+                s3.put_object(Bucket=bucket, Key=fname, Body=bin_value)
+            except Exception:
+                _logger.info("_file_write writing S3 key %s", fname)
+                raise
             return fname
         fname, full_path = self._get_path(bin_value, checksum)
         if not os.path.exists(full_path):
