@@ -52,3 +52,9 @@ package.json
 /man/
 /share/
 /src/
+
+# S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+.env
+localstack/.venv/
+localstack/.cache/
+localstack/volume/
