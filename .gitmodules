@@ -1,0 +1,3 @@
+[submodule "blitzy-localstack"]
+	path = blitzy-localstack
+	url = https://github.com/blitzy-public-samples/blitzy-localstack
