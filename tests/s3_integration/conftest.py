@@ -13,6 +13,19 @@ import pytest
 from moto import mock_aws
 
 
+@pytest.fixture(scope='session', autouse=True)
+def load_registry():
+    """Override pytest-odoo's ``load_registry`` to skip Odoo initialisation.
+
+    The S3 integration tests run independently of the Odoo ORM and do not
+    require a database connection or module registry.  Without this
+    override, ``pytest-odoo``'s session-scoped ``load_registry`` fixture
+    attempts to call ``odoo.tests.common.get_db_name()`` which fails in
+    a standalone pytest context.
+    """
+    yield
+
+
 @pytest.fixture
 def aws_s3(monkeypatch):
     """Activate Moto S3 mock with all required environment variables.
