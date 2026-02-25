@@ -2,19 +2,19 @@
 
 import base64
 import binascii
+import boto3  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
 import contextlib
 import hashlib
 import logging
 import mimetypes
 import os
-import boto3  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
-from botocore.exceptions import ClientError  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
 import psycopg2
 import re
 import uuid
 import warnings
 import werkzeug
 
+from botocore.exceptions import ClientError  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
 from collections import defaultdict
 from collections.abc import Collection
 
@@ -132,16 +132,29 @@ class IrAttachment(models.Model):
             raise UserError(_("The attachment collides with an existing file."))
         return fname, full_path
 
-    @api.model
+    @api.model  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
     def _get_s3_client(self):  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
-        """Return a fresh boto3 S3 client. Instantiated per-call so that
-        Moto's mock_aws context can intercept every request."""
+        """Return a fresh boto3 S3 client with idempotent bucket provisioning.
+
+        Instantiated per-call so that Moto's ``mock_aws`` context can
+        intercept every request.  The bucket is auto-created on each call
+        — a no-op if it already exists — to satisfy the Zero Manual Setup
+        requirement (AAP §0.1.1).
+        """
         # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
-        return boto3.client('s3',
-            endpoint_url=os.environ.get('AWS_ENDPOINT_URL'),
-            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID', 'test'),
-            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY', 'test'),
-            region_name=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'))
+        client = boto3.client('s3',  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            endpoint_url=os.environ.get('AWS_ENDPOINT_URL'),  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID', 'test'),  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY', 'test'),  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            region_name=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'))  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        # Idempotent bucket auto-creation — no-op if bucket already exists.  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        bucket = os.environ.get('AWS_S3_BUCKET', 'odoo-attachments')  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        try:  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            client.create_bucket(Bucket=bucket)  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        except ClientError as e:  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            if e.response['Error']['Code'] not in ('BucketAlreadyOwnedByYou', 'BucketAlreadyExists'):  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+                raise  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        return client  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
 
     @api.model
     def _file_read(self, fname, size=None):

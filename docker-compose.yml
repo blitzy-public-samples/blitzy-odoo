@@ -9,8 +9,6 @@
 #
 # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
 
-version: '3.8'
-
 services:
   db:
     image: postgres:16
