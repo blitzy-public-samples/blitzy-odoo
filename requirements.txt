@@ -100,7 +100,6 @@ zeep==4.3.1 ; python_version >= '3.13'
 # S3 storage backend dependencies
 boto3>=1.34.0
 moto[s3]>=5.0.0
-
 # Test execution
 pytest>=8.0
 pytest-odoo
