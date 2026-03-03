@@ -25,6 +25,30 @@ import pytest
 import requests
 from botocore.exceptions import ClientError
 
+# ---------------------------------------------------------------------------
+# pytest-odoo Plugin Neutralisation
+# ---------------------------------------------------------------------------
+# The ``pytest-odoo`` plugin (registered as the ``odoo`` pytest11 entrypoint)
+# ships session- and module-scoped autouse fixtures that attempt to initialise
+# the full Odoo registry against a PostgreSQL database.  These fixtures are
+# irrelevant (and harmful) for the standalone S3 integration tests which
+# require only a LocalStack endpoint.  Overriding them here prevents
+# ``AttributeError: module 'odoo' has no attribute 'tests'`` and similar
+# failures when running ``pytest tests/s3_integration/ -v`` with the plugin
+# installed.  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+
+
+@pytest.fixture(scope="session", autouse=True)
+def load_registry():
+    """Override pytest-odoo ``load_registry`` — S3 tests don't need Odoo registry."""
+    yield
+
+
+@pytest.fixture(scope="module", autouse=True)
+def enable_odoo_test_flag():
+    """Override pytest-odoo ``enable_odoo_test_flag`` — S3 tests don't need Odoo config."""
+    yield
+
 
 # ---------------------------------------------------------------------------
 # Fixture 1: LocalStack S3 Readiness Gate
