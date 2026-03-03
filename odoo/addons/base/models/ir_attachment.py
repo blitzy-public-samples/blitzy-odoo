@@ -13,6 +13,13 @@ import uuid
 import warnings
 import werkzeug
 
+try:
+    import boto3  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+    from botocore.exceptions import BotoCoreError, ClientError  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+    _boto3_available = True
+except ImportError:
+    _boto3_available = False
+
 from collections import defaultdict
 from collections.abc import Collection
 
@@ -27,6 +34,41 @@ from odoo.tools.misc import limited_field_access_token
 
 _logger = logging.getLogger(__name__)
 SECURITY_FIELDS = ('res_model', 'res_id', 'create_uid', 'public', 'res_field')
+
+# S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+_s3_client = None
+
+
+def _get_s3_client():
+    """Lazily instantiate and return the boto3 S3 client. Idempotently creates the bucket on first call."""
+    # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+    global _s3_client
+    if _s3_client is not None:
+        return _s3_client
+    if not _boto3_available:
+        raise RuntimeError("boto3 is required when IR_ATTACHMENT_STORAGE=s3. Install it via: pip install boto3")
+    _s3_client = boto3.client(
+        's3',
+        endpoint_url=os.environ.get('AWS_ENDPOINT_URL', 'http://localhost:4566'),
+        aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+        region_name=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'),
+    )
+    # Idempotent bucket auto-provisioning — see IR_ATTACHMENT_STORAGE env var
+    bucket = os.environ.get('AWS_S3_BUCKET', 'odoo-attachments')
+    try:
+        _s3_client.create_bucket(Bucket=bucket)
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code not in ('BucketAlreadyOwnedByYou', 'BucketAlreadyExists'):
+            raise
+    return _s3_client
+
+
+def _get_s3_bucket():
+    """Return the configured S3 bucket name."""
+    # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+    return os.environ.get('AWS_S3_BUCKET', 'odoo-attachments')
 
 
 def condition_values(model, field_name, domain):
@@ -133,6 +175,23 @@ class IrAttachment(models.Model):
     @api.model
     def _file_read(self, fname, size=None):
         assert isinstance(self, IrAttachment)
+        # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+        if os.environ.get('IR_ATTACHMENT_STORAGE') == 's3':
+            try:
+                s3 = _get_s3_client()
+                response = s3.get_object(Bucket=_get_s3_bucket(), Key=fname)
+                data = response['Body'].read()
+                if size is not None:
+                    data = data[:size]
+                return data
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'NoSuchKey':
+                    _logger.info("_file_read s3 key missing %s", fname, exc_info=True)
+                    return b''
+                raise
+            except BotoCoreError:
+                _logger.info("_file_read s3 connection error %s", fname, exc_info=True)
+                return b''
         full_path = self._full_path(fname)
         try:
             with open(full_path, 'rb') as f:
@@ -144,6 +203,12 @@ class IrAttachment(models.Model):
     @api.model
     def _file_write(self, bin_value, checksum):
         assert isinstance(self, IrAttachment)
+        # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+        if os.environ.get('IR_ATTACHMENT_STORAGE') == 's3':
+            s3 = _get_s3_client()
+            key = checksum[:2] + '/' + checksum
+            s3.put_object(Bucket=_get_s3_bucket(), Key=key, Body=bin_value)
+            return key
         fname, full_path = self._get_path(bin_value, checksum)
         if not os.path.exists(full_path):
             try:
@@ -158,6 +223,11 @@ class IrAttachment(models.Model):
 
     @api.model
     def _file_delete(self, fname):
+        # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+        if os.environ.get('IR_ATTACHMENT_STORAGE') == 's3':
+            s3 = _get_s3_client()
+            s3.delete_object(Bucket=_get_s3_bucket(), Key=fname)
+            return
         # simply add fname to checklist, it will be garbage-collected later
         self._mark_for_gc(fname)
 
