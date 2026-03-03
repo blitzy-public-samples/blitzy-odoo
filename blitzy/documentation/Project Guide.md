@@ -1,4 +1,4 @@
-# Blitzy Project Guide — S3 Storage Backend for Odoo ir.attachment
+# Blitzy Project Guide — S3-Compatible Object Storage Backend for Odoo 19 ir.attachment
 
 ---
 
@@ -6,63 +6,63 @@
 
 ### 1.1 Project Overview
 
-This project migrates the Odoo 19.0 `ir.attachment` filestore from its local filesystem-backed binary storage to a pluggable S3-compatible object storage backend. Using the `boto3` AWS SDK with configurable `endpoint_url` override, the S3 backend activates exclusively when `IR_ATTACHMENT_STORAGE=s3` is set. When unset, existing filesystem behavior is preserved with zero behavioral change. The implementation is surgical — only three methods (`_file_write`, `_file_read`, `_file_delete`) in a single model file are modified, plus new test infrastructure and dependency declarations. All changes are validated against LocalStack Community Edition.
+This project introduces a pluggable S3-compatible object storage backend into Odoo 19's `ir.attachment` model. The refactoring surgically modifies three core methods (`_file_write`, `_file_read`, `_file_delete`) in `ir_attachment.py` to support an environment-switchable dual-backend architecture: S3 (via `boto3` with `endpoint_url` override) when `IR_ATTACHMENT_STORAGE=s3`, or the existing filesystem path when unset. The implementation includes lazy client initialization, idempotent bucket auto-provisioning, graceful error degradation, and a comprehensive 6-scenario integration test suite validated against LocalStack. All existing Odoo behavior is preserved with zero schema, API, or frontend changes.
 
 ### 1.2 Completion Status
 
+**Completion: 72.6%** (45 hours completed out of 62 total hours)
+
 ```mermaid
-pie title Project Completion — 75% Complete
-    "Completed (36h)" : 36
-    "Remaining (12h)" : 12
+pie title Project Completion Status
+    "Completed (45h)" : 45
+    "Remaining (17h)" : 17
 ```
 
 | Metric | Value |
 |--------|-------|
-| **Total Project Hours** | **48** |
-| **Completed Hours (AI)** | **36** |
-| **Remaining Hours** | **12** |
-| **Completion Percentage** | **75.0%** |
+| Total Project Hours | 62 |
+| Completed Hours (AI) | 45 |
+| Remaining Hours | 17 |
+| Completion Percentage | 72.6% |
 
-**Calculation:** 36 completed hours / (36 + 12) total hours = 36 / 48 = **75.0%**
+**Calculation:** 45 completed hours / (45 completed + 17 remaining) = 45 / 62 = 72.6%
 
 ### 1.3 Key Accomplishments
 
-- ✅ S3 branching logic implemented in all three `_file_*` methods (`_file_write`, `_file_read`, `_file_delete`) in `ir_attachment.py`
-- ✅ Lazy `boto3` client initialization with singleton pattern — prevents import failures when S3 is not configured
-- ✅ Idempotent S3 bucket auto-provisioning on first client access
-- ✅ Graceful error handling in `_file_read` — returns `b''` on `NoSuchKey` or `BotoCoreError`, matching filesystem fallback
-- ✅ 6/6 mandatory S3 integration tests passing (bucket creation, write, read integrity, delete, missing file, filesystem fallback)
-- ✅ All performance assertions met (≤500ms per S3 operation)
-- ✅ LocalStack health-check readiness gate with 30-second timeout and `pytest.skip` on failure
-- ✅ pytest-odoo autouse fixture overrides preventing Odoo registry initialization in S3 tests
-- ✅ Environment documentation (`.env.example`) and Docker convenience file (`docker-compose.yml`) created
-- ✅ `boto3>=1.34.0` and `localstack-client>=2.0.0` added to `requirements.txt`
-- ✅ `.env` exclusion added to `.gitignore`
-- ✅ All existing Odoo code untouched outside the three `_file_*` methods — zero out-of-scope modifications
-- ✅ `blitzy-localstack/` submodule unchanged at pinned commit `9536c7a`
+- ✅ S3 branching logic implemented in all three `_file_*` methods with environment-driven activation guard
+- ✅ Lazy `boto3` client instantiation with try/except import guard — no failures when `boto3` is absent
+- ✅ Idempotent bucket auto-provisioning via `create_bucket` with `BucketAlreadyOwnedByYou`/`BucketAlreadyExists` handling
+- ✅ Graceful error degradation in `_file_read` for missing S3 keys (`NoSuchKey` → `b''`) and connection errors (`BotoCoreError` → `b''`)
+- ✅ S3 key format mirrors filesystem scatter pattern: `{checksum[:2]}/{checksum}`
+- ✅ All 6 mandatory AAP §0.7.3 test scenarios passing (100%) through full Odoo ORM against real PostgreSQL + LocalStack
+- ✅ All public API method signatures preserved unchanged (`_file_write`, `_file_read`, `_file_delete`)
+- ✅ All changes annotated with inline comment: `# S3 storage backend — see IR_ATTACHMENT_STORAGE env var`
+- ✅ Environment documentation (`.env.example`) and convenience infrastructure (`docker-compose.yml`) delivered
+- ✅ All 4 Python source files compile without errors
 
 ### 1.4 Critical Unresolved Issues
 
 | Issue | Impact | Owner | ETA |
 |-------|--------|-------|-----|
-| Full Odoo test suite not executed against PostgreSQL | Cannot confirm zero regressions in existing attachment behavior | Human Developer | 1–2 days |
-| Production AWS credentials not configured | S3 backend non-functional in production without real IAM credentials | Human Developer / DevOps | 1 day |
-| CI/CD pipeline does not include S3 integration tests | S3 tests will not run automatically on future commits | Human Developer / DevOps | 1–2 days |
+| Full Odoo regression suite not verified | Risk of undiscovered side-effects in non-S3 code paths | Human Developer | 4 hours |
+| Production AWS credentials not configured | Cannot deploy to production S3 without real IAM credentials | DevOps Team | 2 hours |
+| No CI/CD pipeline for S3 integration tests | Tests require manual execution; no automated gatekeeping | DevOps Team | 4 hours |
+| No data migration tooling for existing attachments | Existing filesystem attachments not migrated to S3 on switch | Human Developer | 2 hours |
 
 ### 1.5 Access Issues
 
 | System/Resource | Type of Access | Issue Description | Resolution Status | Owner |
 |----------------|---------------|-------------------|-------------------|-------|
-| AWS S3 (Production) | IAM Credentials | Production AWS access keys and IAM role not provisioned | Not Started | DevOps |
-| PostgreSQL (Test) | Database | Full Odoo test suite requires PostgreSQL database for regression testing | Not Configured | Human Developer |
+| AWS S3 (Production) | IAM Credentials | Production `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` not provisioned | Not Started | DevOps Team |
+| CI/CD Runner | Docker Access | CI runners need Docker for LocalStack container during S3 integration tests | Not Started | DevOps Team |
 
 ### 1.6 Recommended Next Steps
 
-1. **[High]** Configure production AWS credentials (IAM role, access keys) and create production S3 bucket with encryption (SSE-S3 or SSE-KMS)
-2. **[High]** Run the full Odoo test suite (`python odoo-bin --test-enable`) against a PostgreSQL database to confirm zero regressions
-3. **[High]** Set up production S3 bucket with appropriate access policies, lifecycle rules, and versioning
-4. **[Medium]** Integrate `pytest tests/s3_integration/ -v` into the CI/CD pipeline with LocalStack as a service container
-5. **[Medium]** Deploy to staging environment and verify end-to-end attachment upload/download via the Odoo web interface with S3 backend
+1. **[High]** Run the full Odoo addon test suite (`python -m pytest odoo/addons/base/tests/ --odoo-database=odoo_test`) to verify G5 functional parity — no existing test should break
+2. **[High]** Provision production AWS IAM credentials and S3 bucket with appropriate lifecycle policies, server-side encryption, and access controls
+3. **[Medium]** Integrate S3 integration tests into the CI/CD pipeline with a LocalStack service container
+4. **[Medium]** Develop a data migration script/runbook for existing filesystem attachments → S3 (one-time batch operation)
+5. **[Low]** Add CloudWatch/Prometheus monitoring for S3 operation latency and error rates in production
 
 ---
 
@@ -72,34 +72,32 @@ pie title Project Completion — 75% Complete
 
 | Component | Hours | Description |
 |-----------|-------|-------------|
-| S3 Backend Core (`ir_attachment.py`) | 12 | S3 branching in `_file_write`, `_file_read`, `_file_delete`; lazy `boto3` client singleton; idempotent bucket auto-creation; `ClientError`/`BotoCoreError` graceful handling; inline comment annotations |
-| Test Infrastructure (`conftest.py`) | 5 | LocalStack health-check gate (30s timeout, `pytest.skip`); `s3_client` session fixture; `s3_bucket` idempotent fixture; pytest-odoo autouse fixture overrides |
-| Test Suite (`test_s3_attachment.py`) | 8 | 6 mandatory test scenarios: bucket auto-creation, file write, file read integrity (SHA1), file delete, missing file graceful error, filesystem fallback; all with ≤500ms performance assertions |
-| Dependency Updates (`requirements.txt`) | 1 | `boto3>=1.34.0` and `localstack-client>=2.0.0` appended to existing manifest |
-| VCS Configuration (`.gitignore`) | 0.5 | `.env` exclusion appended to dotfiles section |
-| Environment Documentation (`.env.example`) | 1 | 6 environment variables documented with dev/test defaults and inline comments |
-| Docker Configuration (`docker-compose.yml`) | 1 | LocalStack service definition with port 4566, S3-only service configuration |
-| Environment Setup & Integration | 3.5 | Virtual environment creation, `pip install -r requirements.txt`, LocalStack container startup, `blitzy-localstack` submodule initialization, editable install of `localstack-core` |
-| Validation & Bug Fixes | 4 | Compilation verification, test execution, runtime S3 round-trip validation, `_file_read` error handling improvements, pytest-odoo fixture conflict resolution |
-| **Total** | **36** | |
+| G1: S3 Backend Core (`ir_attachment.py`) | 16 | Lazy `boto3` import with fallback flag, `_get_s3_client()` with idempotent bucket creation, `_get_s3_bucket()` helper, S3 branching in `_file_read` (with `NoSuchKey` + `BotoCoreError` handling), `_file_write` (with key format), `_file_delete` (direct deletion), inline comment annotations — 70 lines added |
+| G4: S3 Integration Test Suite | 18 | `tests/s3_integration/conftest.py` (162 lines): health-check readiness gate with 30s timeout and `pytest.skip`, `s3_client` fixture, `s3_bucket` fixture, `odoo_env` transactional fixture with DB rollback; `tests/s3_integration/test_s3_attachment.py` (301 lines): 6 ORM-level test scenarios with ≤500ms performance assertions; root `conftest.py` (4 lines): Odoo 19 namespace compatibility |
+| Dependencies & Configuration | 3 | `requirements.txt` (+2 lines: `boto3>=1.34.0`, `localstack-client>=2.0.0`), `.gitignore` (+3 lines: `.env` exclusion), `.env.example` (22 lines: 6 env vars documented with defaults and comments) |
+| Convenience Infrastructure | 1 | `docker-compose.yml` (14 lines): LocalStack service with port 4566, S3-only service configuration, volume mount |
+| Validation, Debugging & Fixes | 7 | Multiple test iteration rounds (12 commits), `_file_read` functional parity fix, pytest-odoo fixture override fix, full rewrite of tests from raw boto3 to true ORM-level testing, compilation verification across all files |
+| **Total** | **45** | |
 
 ### 2.2 Remaining Work Detail
 
 | Category | Base Hours | Priority | After Multiplier |
 |----------|-----------|----------|-----------------|
-| Production AWS/IAM Configuration | 2 | High | 2.5 |
-| Production S3 Bucket Setup (encryption, policies) | 1.5 | High | 2 |
-| Full Odoo Regression Test Validation | 2.5 | High | 3 |
-| CI/CD Pipeline Integration | 2 | Medium | 2.5 |
-| Staging Deployment & Smoke Testing | 1.5 | Medium | 2 |
-| **Total** | **9.5** | | **12** |
+| G5: Full Odoo Regression Suite Verification | 3 | High | 4 |
+| Production AWS IAM & S3 Configuration | 2 | High | 2 |
+| CI/CD Pipeline for S3 Integration Tests | 3 | Medium | 4 |
+| Existing Attachment Data Migration Strategy | 2 | Medium | 2 |
+| Production Secrets Management | 1 | Medium | 1 |
+| S3 Monitoring & Alerting Setup | 2 | Low | 3 |
+| Operations Documentation & Runbook | 1 | Low | 1 |
+| **Total** | **14** | | **17** |
 
 ### 2.3 Enterprise Multipliers Applied
 
 | Multiplier | Value | Rationale |
 |-----------|-------|-----------|
-| Compliance Review | 1.10x | AWS IAM policy review, encryption compliance, access audit trail requirements |
-| Uncertainty Buffer | 1.10x | Production environment differences from LocalStack dev/test; potential Odoo version-specific behaviors under full runtime |
+| Compliance & Review | 1.10x | Code review, security review, and compliance sign-off for production AWS infrastructure changes |
+| Uncertainty Buffer | 1.10x | Path-to-production tasks involve external service configuration and CI environment variability |
 | **Combined** | **1.21x** | Applied to all remaining base hour estimates |
 
 ---
@@ -107,53 +105,47 @@ pie title Project Completion — 75% Complete
 ## Section 3 — Test Results
 
 | Test Category | Framework | Total Tests | Passed | Failed | Coverage % | Notes |
-|--------------|-----------|-------------|--------|--------|-----------|-------|
-| S3 Integration | pytest 9.0.2 | 6 | 6 | 0 | 100% (S3 ops) | All 6 mandatory scenarios per AAP §0.7.3 |
+|---------------|-----------|-------------|--------|--------|------------|-------|
+| S3 Integration (ORM-level) | pytest 9.0.2 + pytest-odoo 2.1.3 | 6 | 6 | 0 | 100% (scenarios) | All 6 AAP §0.7.3 scenarios pass through full Odoo ORM against PostgreSQL 16 + LocalStack S3 |
+| Compilation Check | py_compile | 4 | 4 | 0 | 100% (files) | `ir_attachment.py`, root `conftest.py`, `tests/s3_integration/conftest.py`, `tests/s3_integration/test_s3_attachment.py` |
 
-**Detailed Test Results (from autonomous validation):**
+**Test Scenario Details (from autonomous validation):**
 
-| # | Test Name | Result | Time | Scenario |
-|---|-----------|--------|------|----------|
-| 1 | `test_bucket_auto_creation` | ✅ PASSED | <500ms | Bucket exists after creation, idempotent on repeat calls |
-| 2 | `test_file_write` | ✅ PASSED | <500ms | Object exists in S3 at `{checksum[:2]}/{checksum}` after `put_object` |
-| 3 | `test_file_read_integrity` | ✅ PASSED | <500ms | SHA1 hash of retrieved bytes matches original checksum |
-| 4 | `test_file_delete` | ✅ PASSED | <500ms | Object absent from S3 (404) after `delete_object` |
-| 5 | `test_missing_file_error` | ✅ PASSED | <500ms | `NoSuchKey` caught gracefully, returns `b''` |
-| 6 | `test_filesystem_fallback` | ✅ PASSED | <500ms | S3 guard evaluates `False` when `IR_ATTACHMENT_STORAGE` unset |
+| # | Scenario | Test Function | Result | Duration |
+|---|----------|---------------|--------|----------|
+| 1 | Bucket auto-creation | `test_bucket_auto_creation` | ✅ PASSED | < 500ms |
+| 2 | File write | `test_file_write` | ✅ PASSED | < 500ms |
+| 3 | File read integrity (SHA-1) | `test_file_read_integrity` | ✅ PASSED | < 500ms |
+| 4 | File delete | `test_file_delete` | ✅ PASSED | < 500ms |
+| 5 | Missing file graceful error | `test_missing_file_error` | ✅ PASSED | < 500ms |
+| 6 | Filesystem fallback | `test_filesystem_fallback` | ✅ PASSED | < 500ms |
 
-**Test Execution Summary:**
-- **Platform:** Python 3.12.3, pytest 9.0.2, pluggy 1.6.0
-- **Total Runtime:** 0.15 seconds
-- **Warnings:** 1 (deprecation warning in `dateutil` — unrelated to S3 changes)
-- **Environment:** LocalStack 4.14.1.dev16 (Community Edition), Docker 28.5.2
+**Total test session:** 6 passed in 0.95s
 
 ---
 
 ## Section 4 — Runtime Validation & UI Verification
 
-### Runtime Health Checks
-- ✅ **LocalStack Container:** Running (healthy), uptime stable, port 4566 accessible
-- ✅ **LocalStack S3 Service:** Status `running` (confirmed via `/_localstack/health` endpoint)
-- ✅ **boto3 Client Construction:** Successfully creates `S3` client with LocalStack endpoint override
-- ✅ **Bucket Auto-Provisioning:** `odoo-attachments` bucket created idempotently on first `_get_s3_client()` call
-- ✅ **S3 Round-Trip (put/get/delete):** 42-byte payload uploaded, retrieved with byte-exact match, deleted with 404 confirmation
-- ✅ **Conditional Import:** `_boto3_available=True` when `boto3` installed; module loads without error when `IR_ATTACHMENT_STORAGE` unset
-- ✅ **Odoo Module Import:** `odoo.addons.base.models.ir_attachment` importable, `_get_s3_client` and `_get_s3_bucket` accessible
+**Runtime Health:**
+- ✅ Odoo 19 starts successfully with `--stop-after-init` (14 modules loaded in 2.69s)
+- ✅ LocalStack S3 starts via `docker compose up -d` and reports `s3: available` at health endpoint
+- ✅ PostgreSQL 16 running and accessible (odoo_test database initialized with base module)
+- ✅ Attachment CRUD operations verified through full Odoo ORM → S3 pipeline
+- ✅ All Python dependencies installed in virtual environment (boto3==1.42.60, localstack-client==2.11)
 
-### API Integration Outcomes
-- ✅ **S3 `put_object`:** Returns success, object retrievable via `head_object`
-- ✅ **S3 `get_object`:** Returns full body with correct `ContentLength`
-- ✅ **S3 `delete_object`:** Returns success, subsequent `head_object` returns 404
-- ✅ **S3 `create_bucket`:** Idempotent — second call does not raise error
-- ✅ **S3 `list_buckets`:** Returns bucket list containing `odoo-attachments`
+**S3 Backend Verification:**
+- ✅ `_file_write`: Object created in S3 at `{checksum[:2]}/{checksum}` key — verified via `head_object`
+- ✅ `_file_read`: Content retrieved from S3 matches original data — SHA-1 integrity verified
+- ✅ `_file_delete`: Object removed from S3 — `head_object` confirms 404 after deletion
+- ✅ Missing key handling: `_file_read` returns `b''` gracefully for nonexistent S3 keys
+- ✅ Filesystem fallback: When `IR_ATTACHMENT_STORAGE` is unset, data lands on local filesystem with no S3 calls
+- ✅ Bucket auto-provisioning: Bucket created idempotently on first S3 operation; repeat calls are no-ops
 
-### Compilation Results
-- ✅ `odoo/addons/base/models/ir_attachment.py` — compiles (`py_compile` success)
-- ✅ `tests/s3_integration/conftest.py` — compiles (`py_compile` success)
-- ✅ `tests/s3_integration/test_s3_attachment.py` — compiles (`py_compile` success)
+**UI Verification:**
+- ⚠ Not applicable — this refactoring has zero frontend changes (no JS, XML, SCSS modifications per AAP scope)
 
-### UI Verification
-- ⚠ **Not Applicable** — This is a backend-only refactoring with no frontend/UI changes. The Odoo web interface was not tested as it requires full server startup with PostgreSQL, which is outside the scope of autonomous validation.
+**API Verification:**
+- ⚠ XML-RPC and JSON-RPC endpoints not explicitly tested — public API signatures are unchanged per design
 
 ---
 
@@ -161,40 +153,44 @@ pie title Project Completion — 75% Complete
 
 | AAP Requirement | Status | Evidence |
 |----------------|--------|----------|
-| **G1 — S3 Read/Write/Delete** in `_file_write`, `_file_read`, `_file_delete` | ✅ Pass | S3 branching implemented in all 3 methods; 70 lines added to `ir_attachment.py`; runtime round-trip validated |
-| **G2 — Environment-Driven Activation** (`IR_ATTACHMENT_STORAGE=s3` guard) | ✅ Pass | `os.environ.get('IR_ATTACHMENT_STORAGE') == 's3'` guard in all 3 methods; `test_filesystem_fallback` passes |
-| **G3 — Bucket Auto-Provisioning** (idempotent `create_bucket`) | ✅ Pass | `_get_s3_client()` creates bucket on first call; `BucketAlreadyOwnedByYou`/`BucketAlreadyExists` handled; `test_bucket_auto_creation` passes |
-| **G4 — LocalStack Validation Harness** (6 test scenarios) | ✅ Pass | 6/6 tests pass; health-check gate with 30s timeout; ≤500ms performance assertions; `conftest.py` + `test_s3_attachment.py` created |
-| **G5 — Functional Parity** (no regressions) | ⚠ Partial | No existing test files modified; no schema/ORM/API changes; full Odoo test suite NOT executed (requires PostgreSQL) |
-| **Lazy boto3 import** (no import-time failure) | ✅ Pass | `try/except ImportError` block with `_boto3_available` flag; verified module loads when `IR_ATTACHMENT_STORAGE` unset |
-| **S3 key format** `{checksum[:2]}/{checksum}` | ✅ Pass | Key construction `checksum[:2] + '/' + checksum` in `_file_write`; verified in `test_file_write` |
-| **Graceful error handling** (`_file_read` returns `b''`) | ✅ Pass | `ClientError`/`NoSuchKey` → `b''`; `BotoCoreError` → `b''`; matches filesystem `OSError` fallback |
-| **Inline comment annotations** on all changes | ✅ Pass | `# S3 storage backend — see IR_ATTACHMENT_STORAGE env var` on every S3-related addition |
-| **Public API signatures preserved** | ✅ Pass | `_file_write(bin_value, checksum)`, `_file_read(fname, size)`, `_file_delete(fname)` unchanged |
-| **Submodule immutability** (`blitzy-localstack/` at `9536c7a`) | ✅ Pass | `git submodule status` confirms `9536c7ac80d700979973509aa45c769e0e744b14` |
-| **requirements.txt updated** | ✅ Pass | `boto3>=1.34.0` and `localstack-client>=2.0.0` appended |
-| **.gitignore updated** | ✅ Pass | `.env` exclusion appended to dotfiles section |
-| **.env.example created** | ✅ Pass | 6 env vars documented with dev/test defaults |
-| **docker-compose.yml created** | ✅ Pass | LocalStack service definition with port 4566, S3-only |
+| G1: S3 Read/Write/Delete in `_file_write`, `_file_read`, `_file_delete` | ✅ Pass | 70 lines added to `ir_attachment.py`; S3 branches with `boto3` `put_object`, `get_object`, `delete_object` |
+| G2: Environment-Driven Activation (`IR_ATTACHMENT_STORAGE=s3`) | ✅ Pass | `os.environ.get('IR_ATTACHMENT_STORAGE') == 's3'` guard at top of each method |
+| G3: Bucket Auto-Provisioning (idempotent `create_bucket`) | ✅ Pass | `_get_s3_client()` calls `create_bucket` with `BucketAlreadyOwnedByYou`/`BucketAlreadyExists` handling |
+| G4: LocalStack Validation Harness (6 test scenarios, ≤500ms, health gate) | ✅ Pass | 6/6 tests passing through ORM; health-check gate with 30s timeout; performance assertions in all tests |
+| G5: Functional Parity (all existing tests pass unmodified) | ⚠ Partial | Odoo boots successfully; compilation clean; full addon test suite not explicitly run |
+| Lazy `boto3` instantiation (no import-time failure) | ✅ Pass | `try: import boto3 ... except ImportError: _boto3_available = False` at module level |
+| S3 key format `{checksum[:2]}/{checksum}` | ✅ Pass | `key = checksum[:2] + '/' + checksum` in `_file_write` |
+| Graceful error on missing S3 key | ✅ Pass | `NoSuchKey` → `_logger.info(…) → return b''` in `_file_read` |
+| Inline comment annotations on all changes | ✅ Pass | 8 instances of `# S3 storage backend — see IR_ATTACHMENT_STORAGE env var` across all changed lines |
+| Public API signatures unchanged | ✅ Pass | `_file_write(bin_value, checksum)`, `_file_read(fname, size=None)`, `_file_delete(fname)` — signatures identical |
+| No existing test files modified | ✅ Pass | Zero changes to any file under `odoo/addons/base/tests/` |
+| No PostgreSQL schema changes | ✅ Pass | No DDL changes, no new tables or columns |
+| No frontend changes | ✅ Pass | No JS, XML, SCSS modifications |
+| Submodule `blitzy-localstack/` untouched | ✅ Pass | No modifications to submodule or `.gitmodules` |
+| `requirements.txt` updated with `boto3>=1.34.0`, `localstack-client>=2.0.0` | ✅ Pass | 2 lines appended at end of file |
+| `.gitignore` updated with `.env` | ✅ Pass | `.env` entry added under `# environment secrets` section |
+| `.env.example` created with 6 env vars | ✅ Pass | 22-line file with all 6 variables documented with defaults |
+| `docker-compose.yml` created | ✅ Pass | 14-line LocalStack service definition with port 4566 |
 
-### Autonomous Fixes Applied During Validation
-1. **pytest-odoo fixture conflicts** — Added `load_registry` and `enable_odoo_test_flag` override fixtures in `conftest.py` to prevent Odoo registry initialization during standalone S3 tests
-2. **`_file_read` error handling** — Enhanced to catch both `ClientError` (NoSuchKey) and `BotoCoreError` (connection errors), returning `b''` for functional parity with filesystem fallback
+**Validation Fixes Applied During Autonomous Testing:**
+1. Fixed `_file_read` S3 error handling to match filesystem graceful degradation pattern (commit `1b11baa`)
+2. Overrode pytest-odoo autouse fixtures for S3 integration test isolation (commit `0d36c9d`)
+3. Rewrote entire test suite from raw boto3 calls to true Odoo-to-S3 ORM-level tests (commit `a57d756`)
 
 ---
 
 ## Section 6 — Risk Assessment
 
 | Risk | Category | Severity | Probability | Mitigation | Status |
-|------|----------|----------|------------|------------|--------|
-| Full Odoo test suite not validated | Technical | High | Medium | Run `python odoo-bin --test-enable -d testdb` with PostgreSQL before merge | Open |
-| Production AWS credentials not provisioned | Operational | High | High | Create IAM role with `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:CreateBucket` permissions | Open |
-| S3 client singleton not thread-safe under Odoo's gevent workers | Technical | Medium | Low | The global `_s3_client` uses simple check-and-set; `boto3` clients are thread-safe for operations but not for initialization. Consider adding a threading lock if using multi-worker mode | Open |
-| No S3 lifecycle/versioning policies for production bucket | Operational | Medium | Medium | Configure S3 bucket lifecycle rules, versioning, and cross-region replication as needed | Open |
-| Missing encryption at rest for S3 bucket | Security | Medium | High | Enable SSE-S3 or SSE-KMS default encryption on production bucket | Open |
-| `boto3` version floor `>=1.34.0` may introduce breaking changes | Technical | Low | Low | Pin to a specific minor version range (e.g., `boto3>=1.34.0,<2.0.0`) if stability is critical | Open |
-| LocalStack behavior differences from AWS production S3 | Integration | Medium | Medium | Validate critical operations against real AWS S3 in staging environment before production deployment | Open |
-| No monitoring/alerting for S3 operation failures | Operational | Medium | Medium | Add CloudWatch metrics or application-level logging aggregation for S3 error rates | Open |
+|------|----------|----------|-------------|------------|--------|
+| Full Odoo regression suite not verified — potential undiscovered side-effects | Technical | Medium | Low | Run `python -m pytest odoo/addons/base/tests/` with S3 env unset to confirm filesystem parity | Open |
+| Module-level `_s3_client` global state not thread-safe under concurrent Odoo workers | Technical | Medium | Low | `_get_s3_client()` uses simple `if _s3_client is not None` check; add threading lock for multi-worker deployments | Open |
+| Production AWS credentials hardcoded or leaked via `.env` | Security | High | Low | `.env` excluded from git via `.gitignore`; use AWS Secrets Manager or Vault in production | Mitigated (partial) |
+| S3 operations are not transactional with PostgreSQL | Operational | Medium | Medium | Document that DB rollback does not undo S3 writes; orphaned S3 objects may accumulate — add S3 lifecycle policy | Open |
+| No retry logic or exponential backoff for S3 API calls | Technical | Medium | Low | `boto3` provides built-in retries via `botocore`; configure `max_attempts` in production via AWS SDK config | Open |
+| LocalStack-only validation — real AWS S3 not tested | Integration | Medium | Medium | Test against real AWS S3 in staging before production deploy | Open |
+| Data migration from filesystem to S3 not automated | Operational | High | High | Develop batch migration script before enabling S3 in production with existing data | Open |
+| No monitoring or alerting for S3 operation failures | Operational | Medium | Medium | Add CloudWatch metrics or application-level logging aggregation for S3 error rates | Open |
 
 ---
 
@@ -202,61 +198,55 @@ pie title Project Completion — 75% Complete
 
 ```mermaid
 pie title Project Hours Breakdown
-    "Completed Work" : 36
-    "Remaining Work" : 12
+    "Completed Work" : 45
+    "Remaining Work" : 17
 ```
 
-**Completion: 75.0%** (36 hours completed / 48 total hours)
+**Completion: 72.6%** — 45 hours completed, 17 hours remaining, 62 total hours.
 
-### Remaining Work by Priority
+**Remaining Hours by Category:**
 
 ```mermaid
-pie title Remaining Hours by Priority
-    "High Priority" : 7.5
-    "Medium Priority" : 4.5
+bar title Remaining Work by Priority
+    "G5: Odoo Regression (High)" : 4
+    "AWS IAM Config (High)" : 2
+    "CI/CD Pipeline (Medium)" : 4
+    "Data Migration (Medium)" : 2
+    "Secrets Mgmt (Medium)" : 1
+    "Monitoring (Low)" : 3
+    "Ops Docs (Low)" : 1
 ```
-
-| Priority | Hours | Categories |
-|----------|-------|-----------|
-| High | 7.5 | Production AWS/IAM (2.5h) + S3 Bucket Setup (2h) + Odoo Regression Testing (3h) |
-| Medium | 4.5 | CI/CD Integration (2.5h) + Staging Deployment (2h) |
-| **Total** | **12** | |
 
 ---
 
 ## Section 8 — Summary & Recommendations
 
-### Achievement Summary
+### Achievements
 
-The Blitzy autonomous agents successfully delivered **all AAP-scoped code changes** for the S3 storage backend migration. The project is **75.0% complete** (36 hours completed out of 48 total hours). All 7 target files were created or modified per specification, all 6 mandatory test scenarios pass with 100% success rate, and the runtime S3 round-trip has been validated against LocalStack.
+All seven AAP-scoped files have been delivered: `ir_attachment.py` (modified with 70 lines of S3 backend logic), `requirements.txt` (updated with `boto3` and `localstack-client`), `.gitignore` (`.env` exclusion), `tests/s3_integration/conftest.py` (162-line fixture suite), `tests/s3_integration/test_s3_attachment.py` (301-line test suite), `.env.example` (environment documentation), and `docker-compose.yml` (LocalStack convenience file). An additional root `conftest.py` was created for Odoo 19 namespace compatibility.
 
-The implementation follows a clean Strategy Pattern with environment-driven activation, lazy initialization, and graceful degradation — adhering to the Minimal Change Mandate with only 70 lines added to the existing 948-line `ir_attachment.py` file.
+All six mandatory AAP §0.7.3 test scenarios pass at 100% through the full Odoo ORM against real PostgreSQL 16 and LocalStack S3. The implementation preserves all existing public API signatures, makes zero schema changes, modifies zero existing test files, and leaves the `blitzy-localstack/` submodule untouched.
 
 ### Remaining Gaps
 
-The **12 hours of remaining work** are entirely path-to-production activities:
-1. **Production AWS infrastructure** — IAM credentials, S3 bucket with encryption and policies (4.5h)
-2. **Full regression testing** — Running the complete Odoo test suite against PostgreSQL (3h)
-3. **CI/CD and deployment** — Pipeline integration and staging verification (4.5h)
+The project is **72.6% complete** (45 hours completed out of 62 total hours). All AAP-specified code deliverables are complete. The remaining 17 hours consist entirely of path-to-production activities: full Odoo regression verification (4h), production AWS configuration (2h), CI/CD pipeline integration (4h), data migration strategy (2h), secrets management (1h), monitoring setup (3h), and operations documentation (1h).
 
 ### Critical Path to Production
 
-1. Provision production AWS IAM role with S3 permissions
-2. Create production S3 bucket with SSE-S3 encryption enabled
-3. Run full Odoo test suite to confirm zero regressions
-4. Add S3 integration tests to CI/CD pipeline
-5. Deploy to staging → verify end-to-end → promote to production
+1. **Verify G5 functional parity** by running the complete Odoo addon test suite with `IR_ATTACHMENT_STORAGE` unset — this confirms the filesystem path is unchanged
+2. **Provision production AWS IAM** with least-privilege S3 permissions (`s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:CreateBucket`, `s3:ListBucket`)
+3. **Integrate S3 tests into CI/CD** using a LocalStack service container (Docker-in-Docker or sidecar)
+4. **Plan and execute data migration** for any existing filesystem-stored attachments that must move to S3
 
 ### Production Readiness Assessment
 
-| Dimension | Status | Notes |
-|-----------|--------|-------|
-| Code Complete | ✅ Ready | All AAP-scoped code changes delivered and tested |
-| Unit/Integration Tests | ✅ Ready | 6/6 S3 tests passing against LocalStack |
-| Regression Tests | ⚠ Pending | Full Odoo test suite requires PostgreSQL execution |
-| Security | ⚠ Pending | Production encryption and IAM policies needed |
-| CI/CD | ⚠ Pending | S3 tests not yet integrated into pipeline |
-| Deployment | ⚠ Pending | Staging verification not yet performed |
+| Dimension | Score | Notes |
+|-----------|-------|-------|
+| Code Quality | ✅ High | Clean implementation with graceful error handling, inline annotations, lazy initialization |
+| Test Coverage | ✅ High | 6/6 AAP scenarios passing through ORM; compilation clean |
+| Security | ⚠ Medium | `.env` gitignored; production credentials not yet provisioned; no encryption-at-rest configured |
+| Operational Readiness | ⚠ Medium | No monitoring, no data migration tooling, no S3 lifecycle policies |
+| Documentation | ✅ High | `.env.example`, inline comments, comprehensive test docstrings |
 
 ---
 
@@ -266,148 +256,136 @@ The **12 hours of remaining work** are entirely path-to-production activities:
 
 | Software | Version | Purpose |
 |----------|---------|---------|
-| Python | 3.12.x | Runtime (Odoo 19.0 requires Python ≥ 3.10) |
-| Docker | ≥ 20.10 | Runs LocalStack container for S3 emulation |
-| Git | ≥ 2.13 | Submodule support required for `blitzy-localstack/` |
-| pip | ≥ 23.0 | Python package manager |
+| Python | 3.12+ | Odoo 19 runtime (MIN_PY_VERSION = 3.10) |
+| PostgreSQL | 16+ | Odoo database backend |
+| Docker | 20+ | LocalStack container for S3 integration testing |
+| Docker Compose | v2+ | Convenience orchestration for LocalStack |
+| Git | 2.13+ | Submodule support for `blitzy-localstack/` |
 
 ### Environment Setup
 
-**Step 1: Clone and initialize submodules**
-
 ```bash
+# 1. Clone and initialize submodules
 git clone <repository-url> blitzy-odoo
 cd blitzy-odoo
-git checkout blitzy-780e2bef-b597-46fd-86b2-5016d9490e17
 git submodule update --init --recursive
-```
 
-**Step 2: Create and activate virtual environment**
-
-```bash
+# 2. Create and activate Python virtual environment
 python3.12 -m venv venv
 source venv/bin/activate
-```
 
-**Step 3: Install dependencies**
-
-```bash
-pip install -r requirements.txt
-pip install -e blitzy-localstack/localstack-core/
-```
-
-Expected output should include `boto3`, `localstack-client`, and `localstack-core` among installed packages.
-
-**Step 4: Configure environment variables**
-
-```bash
+# 3. Copy and customize environment variables
 cp .env.example .env
-# Edit .env if needed — defaults are suitable for local development with LocalStack
+# Edit .env if needed — defaults work for LocalStack dev/test
 ```
 
-Default `.env` values:
-```
-IR_ATTACHMENT_STORAGE=s3
-AWS_S3_BUCKET=odoo-attachments
-AWS_ENDPOINT_URL=http://localhost:4566
-AWS_ACCESS_KEY_ID=test
-AWS_SECRET_ACCESS_KEY=test
-AWS_DEFAULT_REGION=us-east-1
-```
+**Environment Variables (from `.env.example`):**
 
-### Dependency Installation Verification
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IR_ATTACHMENT_STORAGE` | `s3` | Set to `s3` to activate S3 backend; unset for filesystem |
+| `AWS_S3_BUCKET` | `odoo-attachments` | Target S3 bucket name |
+| `AWS_ENDPOINT_URL` | `http://localhost:4566` | S3 endpoint (LocalStack default) |
+| `AWS_ACCESS_KEY_ID` | `test` | AWS credential (LocalStack placeholder) |
+| `AWS_SECRET_ACCESS_KEY` | `test` | AWS credential (LocalStack placeholder) |
+| `AWS_DEFAULT_REGION` | `us-east-1` | AWS region |
+
+### Dependency Installation
 
 ```bash
-pip show boto3 localstack-client pytest pytest-odoo | grep -E "^(Name|Version):"
+# Install Python dependencies (includes boto3 and localstack-client)
+pip install -r requirements.txt
+
+# Install LocalStack core from submodule (required for test utilities)
+pip install -e blitzy-localstack/localstack-core/
+
+# Install Odoo in editable mode
+pip install -e .
+
+# Verify key packages
+pip show boto3 localstack-client pytest-odoo pytest
 ```
 
-Expected output:
-```
-Name: boto3
-Version: 1.42.59
-Name: localstack-client
-Version: 2.11
-Name: pytest
-Version: 9.0.2
-Name: pytest-odoo
-Version: 2.1.3
-```
+**Expected output:**
+- `boto3` version ≥ 1.34.0
+- `localstack-client` version ≥ 2.0.0
+- `pytest` version ≥ 8.0
+- `pytest-odoo` version ≥ 2.0.0
 
-### Application Startup — LocalStack
-
-**Option A: Using Docker (recommended)**
+### Application Startup
 
 ```bash
+# 1. Start LocalStack S3 service
 docker compose up -d
-```
 
-**Option B: Using submodule CLI**
+# 2. Wait for S3 readiness (should return "available")
+curl -s http://localhost:4566/_localstack/health | python3 -c \
+  "import sys,json; print(json.load(sys.stdin)['services']['s3'])"
 
-```bash
-blitzy-localstack/bin/localstack start -d
-```
+# 3. Ensure PostgreSQL is running
+pg_lsclusters  # Should show "16 main 5432 online"
 
-**Verify LocalStack is healthy:**
-
-```bash
-curl -s http://localhost:4566/_localstack/health | python3 -m json.tool
-```
-
-Expected: `"s3": "running"` in the `services` object.
-
-### Running S3 Integration Tests
-
-```bash
+# 4. Initialize Odoo test database (first time only)
 source venv/bin/activate
+python odoo-bin --stop-after-init \
+  --database=odoo_test \
+  --addons-path=addons,odoo/addons \
+  -i base
+
+# 5. Verify Odoo starts with S3 backend
+IR_ATTACHMENT_STORAGE=s3 \
 AWS_ENDPOINT_URL=http://localhost:4566 \
 AWS_ACCESS_KEY_ID=test \
 AWS_SECRET_ACCESS_KEY=test \
 AWS_DEFAULT_REGION=us-east-1 \
 AWS_S3_BUCKET=odoo-attachments \
-IR_ATTACHMENT_STORAGE=s3 \
-pytest tests/s3_integration/ -v
+python odoo-bin --stop-after-init \
+  --database=odoo_test \
+  --addons-path=addons,odoo/addons
 ```
 
-Expected output:
-```
-tests/s3_integration/test_s3_attachment.py::test_bucket_auto_creation PASSED
-tests/s3_integration/test_s3_attachment.py::test_file_write PASSED
-tests/s3_integration/test_s3_attachment.py::test_file_read_integrity PASSED
-tests/s3_integration/test_s3_attachment.py::test_file_delete PASSED
-tests/s3_integration/test_s3_attachment.py::test_missing_file_error PASSED
-tests/s3_integration/test_s3_attachment.py::test_filesystem_fallback PASSED
-========================= 6 passed in 0.15s =========================
-```
-
-### Verification — S3 Round-Trip
+### Verification Steps — Running the S3 Integration Tests
 
 ```bash
 source venv/bin/activate
-python3 -c "
-import boto3, hashlib
-client = boto3.client('s3', endpoint_url='http://localhost:4566',
-    aws_access_key_id='test', aws_secret_access_key='test', region_name='us-east-1')
-data = b'hello S3'
-key = hashlib.sha1(data).hexdigest()
-key = key[:2] + '/' + key
-client.create_bucket(Bucket='odoo-attachments')
-client.put_object(Bucket='odoo-attachments', Key=key, Body=data)
-resp = client.get_object(Bucket='odoo-attachments', Key=key)
-print('Read back:', resp['Body'].read())
-client.delete_object(Bucket='odoo-attachments', Key=key)
-print('Round-trip OK')
-"
+
+# Start LocalStack
+docker compose up -d
+
+# Run all 6 S3 integration tests
+IR_ATTACHMENT_STORAGE=s3 \
+AWS_ENDPOINT_URL=http://localhost:4566 \
+AWS_ACCESS_KEY_ID=test \
+AWS_SECRET_ACCESS_KEY=test \
+AWS_DEFAULT_REGION=us-east-1 \
+AWS_S3_BUCKET=odoo-attachments \
+python -m pytest tests/s3_integration/ -v \
+  --odoo-database=odoo_test \
+  --odoo-addons-path=addons,odoo/addons
+
+# Expected output:
+# tests/s3_integration/test_s3_attachment.py::test_bucket_auto_creation PASSED
+# tests/s3_integration/test_s3_attachment.py::test_file_write PASSED
+# tests/s3_integration/test_s3_attachment.py::test_file_read_integrity PASSED
+# tests/s3_integration/test_s3_attachment.py::test_file_delete PASSED
+# tests/s3_integration/test_s3_attachment.py::test_missing_file_error PASSED
+# tests/s3_integration/test_s3_attachment.py::test_filesystem_fallback PASSED
+# ======================== 6 passed in ~1s =========================
+
+# Stop LocalStack when done
+docker compose down
 ```
 
 ### Troubleshooting
 
 | Issue | Cause | Resolution |
-|-------|-------|-----------|
-| `ConnectionError` when running tests | LocalStack not running | Run `docker compose up -d` and wait for healthy status |
-| `ModuleNotFoundError: No module named 'boto3'` | Dependencies not installed | Run `pip install -r requirements.txt` |
-| `AttributeError: module 'odoo' has no attribute 'tests'` | pytest-odoo attempting Odoo registry init | Ensure running tests from `tests/s3_integration/` directory — conftest.py overrides are directory-scoped |
-| Tests skip with "LocalStack S3 not available" | S3 service not ready within 30s | Check `docker ps` for container health; check `curl http://localhost:4566/_localstack/health` |
-| `RuntimeError: boto3 is required` | `boto3` not installed but `IR_ATTACHMENT_STORAGE=s3` | Install boto3: `pip install boto3>=1.34.0` |
+|-------|-------|------------|
+| `ModuleNotFoundError: No module named 'boto3'` | `boto3` not installed in active venv | Run `pip install boto3>=1.34.0` |
+| `RuntimeError: boto3 is required when IR_ATTACHMENT_STORAGE=s3` | `boto3` not installed but S3 mode activated | Install boto3 or unset `IR_ATTACHMENT_STORAGE` |
+| `pytest.skip: LocalStack S3 not available` | LocalStack not running or S3 service not ready | Run `docker compose up -d` and wait for health check |
+| `psycopg2.OperationalError: could not connect to server` | PostgreSQL not running or `odoo_test` database doesn't exist | Start PostgreSQL and initialize the database (Step 4 above) |
+| `botocore.exceptions.EndpointConnectionError` | `AWS_ENDPOINT_URL` pointing to unreachable host | Verify LocalStack is running: `curl http://localhost:4566/_localstack/health` |
+| Tests pass but S3 objects persist after DB rollback | S3 operations are not transactional | Expected behavior — each test uses unique checksums for isolation |
 
 ---
 
@@ -417,14 +395,14 @@ print('Round-trip OK')
 
 | Command | Purpose |
 |---------|---------|
-| `docker compose up -d` | Start LocalStack container in background |
+| `docker compose up -d` | Start LocalStack S3 service in background |
 | `docker compose down` | Stop and remove LocalStack container |
 | `curl -s http://localhost:4566/_localstack/health` | Check LocalStack service health |
-| `pytest tests/s3_integration/ -v` | Run S3 integration test suite |
-| `python -m py_compile odoo/addons/base/models/ir_attachment.py` | Verify ir_attachment.py compiles |
+| `python -m pytest tests/s3_integration/ -v --odoo-database=odoo_test --odoo-addons-path=addons,odoo/addons` | Run S3 integration test suite |
+| `python odoo-bin --stop-after-init -d odoo_test --addons-path=addons,odoo/addons -i base` | Initialize Odoo test database |
+| `python -m py_compile odoo/addons/base/models/ir_attachment.py` | Verify Python compilation |
 | `pip install -r requirements.txt` | Install all Python dependencies |
-| `pip install -e blitzy-localstack/localstack-core/` | Install LocalStack core in editable mode |
-| `git submodule update --init --recursive` | Initialize blitzy-localstack submodule |
+| `pip install -e blitzy-localstack/localstack-core/` | Install LocalStack core (editable) |
 
 ### B. Port Reference
 
@@ -432,75 +410,84 @@ print('Round-trip OK')
 |------|---------|----------|
 | 4566 | LocalStack Gateway (S3) | HTTP |
 | 4510–4559 | LocalStack External Services | HTTP |
+| 5432 | PostgreSQL 16 | TCP |
+| 8069 | Odoo HTTP (default) | HTTP |
+| 8072 | Odoo Long-Polling (default) | HTTP |
 
 ### C. Key File Locations
 
 | File | Purpose |
 |------|---------|
-| `odoo/addons/base/models/ir_attachment.py` | Core attachment model with S3 backend branching |
-| `tests/s3_integration/conftest.py` | Pytest fixtures for S3 integration testing |
-| `tests/s3_integration/test_s3_attachment.py` | 6 mandatory S3 test scenarios |
-| `.env.example` | Environment variable documentation with defaults |
+| `odoo/addons/base/models/ir_attachment.py` | Core S3 backend implementation (lines 16–71: imports + helpers; lines 178–230: method branches) |
+| `tests/s3_integration/conftest.py` | Pytest fixtures: health gate, S3 client, bucket name, Odoo environment |
+| `tests/s3_integration/test_s3_attachment.py` | 6 mandatory S3 integration test scenarios |
+| `conftest.py` (root) | Odoo 19 namespace import for pytest-odoo compatibility |
+| `.env.example` | Environment variable documentation with dev/test defaults |
 | `docker-compose.yml` | LocalStack service definition |
-| `requirements.txt` | Python dependency manifest (includes boto3, localstack-client) |
-| `.gitignore` | VCS exclusions (includes .env) |
-| `blitzy-localstack/` | LocalStack submodule (pinned at commit 9536c7a — DO NOT MODIFY) |
+| `requirements.txt` | Python dependency manifest (includes `boto3`, `localstack-client`) |
+| `.gitignore` | VCS exclusion rules (includes `.env`) |
 
 ### D. Technology Versions
 
-| Technology | Version | Notes |
-|-----------|---------|-------|
-| Python | 3.12.3 | Runtime for Odoo 19.0 |
-| Odoo | 19.0.0 FINAL | Target application |
-| boto3 | 1.42.59 (≥1.34.0 required) | AWS SDK for S3 operations |
-| localstack-client | 2.11 (≥2.0.0 required) | LocalStack endpoint auto-configuration |
-| pytest | 9.0.2 (≥8.0 required) | Test framework |
-| pytest-odoo | 2.1.3 (≥2.0.0 required) | Odoo test compatibility |
-| LocalStack | 4.14.1.dev16 (Community) | S3 emulation for dev/test |
-| Docker | 28.5.2 | Container runtime for LocalStack |
+| Technology | Version | Source |
+|-----------|---------|--------|
+| Odoo | 19.0.0 FINAL | `odoo/release.py` |
+| Python | 3.12.3 | System runtime |
+| PostgreSQL | 16.11 | System package |
+| boto3 | 1.42.60 | `pip show boto3` (venv) |
+| localstack-client | 2.11 | `pip show localstack-client` (venv) |
+| pytest | 9.0.2 | `pip show pytest` (venv) |
+| pytest-odoo | 2.1.3 | `pip show pytest-odoo` (venv) |
+| LocalStack | Community Edition | Docker image `localstack/localstack` |
+| Docker Compose | v2 | `docker-compose.yml` (no deprecated `version` key) |
 
 ### E. Environment Variable Reference
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `IR_ATTACHMENT_STORAGE` | Yes (for S3) | _(unset)_ | Set to `s3` to activate S3 backend; unset preserves filesystem |
-| `AWS_S3_BUCKET` | No | `odoo-attachments` | Target S3 bucket name |
-| `AWS_ENDPOINT_URL` | No | `http://localhost:4566` | S3 endpoint URL (LocalStack for dev; unset for real AWS) |
-| `AWS_ACCESS_KEY_ID` | Yes (for S3) | _(none)_ | AWS access key (`test` for LocalStack) |
-| `AWS_SECRET_ACCESS_KEY` | Yes (for S3) | _(none)_ | AWS secret key (`test` for LocalStack) |
-| `AWS_DEFAULT_REGION` | No | `us-east-1` | AWS region for S3 operations |
+| `IR_ATTACHMENT_STORAGE` | No | (unset — filesystem) | Set to `s3` to activate S3 backend |
+| `AWS_S3_BUCKET` | When S3 active | `odoo-attachments` | Target S3 bucket name |
+| `AWS_ENDPOINT_URL` | When S3 active | `http://localhost:4566` | S3-compatible endpoint URL |
+| `AWS_ACCESS_KEY_ID` | When S3 active | (none) | AWS access key credential |
+| `AWS_SECRET_ACCESS_KEY` | When S3 active | (none) | AWS secret key credential |
+| `AWS_DEFAULT_REGION` | When S3 active | `us-east-1` | AWS region for S3 operations |
 
 ### F. Developer Tools Guide
 
-**Compiling modified files:**
+**Running individual tests:**
 ```bash
-python -m py_compile odoo/addons/base/models/ir_attachment.py
-python -m py_compile tests/s3_integration/conftest.py
-python -m py_compile tests/s3_integration/test_s3_attachment.py
+# Run a single test scenario
+IR_ATTACHMENT_STORAGE=s3 AWS_ENDPOINT_URL=http://localhost:4566 \
+  AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+  python -m pytest tests/s3_integration/test_s3_attachment.py::test_file_write -v \
+  --odoo-database=odoo_test --odoo-addons-path=addons,odoo/addons
 ```
 
-**Viewing the diff from base branch:**
+**Inspecting S3 bucket contents (via AWS CLI with LocalStack):**
 ```bash
-git diff origin/localstack...HEAD --stat
-git diff origin/localstack...HEAD -- odoo/addons/base/models/ir_attachment.py
+AWS_ENDPOINT_URL=http://localhost:4566 \
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+AWS_DEFAULT_REGION=us-east-1 \
+aws s3 ls s3://odoo-attachments/ --recursive
 ```
 
-**Checking submodule status:**
+**Resetting S3 state (delete all objects in test bucket):**
 ```bash
-git submodule status
-# Expected: 9536c7ac80d... blitzy-localstack (...)
+AWS_ENDPOINT_URL=http://localhost:4566 \
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+AWS_DEFAULT_REGION=us-east-1 \
+aws s3 rm s3://odoo-attachments/ --recursive
 ```
 
 ### G. Glossary
 
 | Term | Definition |
 |------|-----------|
-| `ir.attachment` | Odoo's core model for storing binary file attachments (database or filesystem) |
-| `_file_write` | Method that persists binary data to storage (filesystem or S3) keyed by SHA1 checksum |
-| `_file_read` | Method that retrieves binary data from storage by filename/key |
-| `_file_delete` | Method that removes binary data from storage (GC checklist for filesystem, immediate delete for S3) |
-| `LocalStack` | Open-source AWS cloud emulator that runs locally for testing S3, Lambda, and other services |
-| `boto3` | AWS SDK for Python — provides low-level client APIs for S3 and other AWS services |
-| `endpoint_url` | boto3 client parameter that overrides the default AWS endpoint — used to point to LocalStack |
-| `SSE-S3` | Server-Side Encryption with Amazon S3-managed keys — encrypts objects at rest in S3 |
-| `IAM` | AWS Identity and Access Management — controls who can access AWS resources |
+| `ir.attachment` | Odoo's core model for binary file storage (attachments), implemented in `ir_attachment.py` |
+| `_file_write` | Protected method that persists binary data to the storage backend (filesystem or S3) |
+| `_file_read` | Protected method that retrieves binary data from the storage backend by filename/key |
+| `_file_delete` | Protected method that removes a stored file from the storage backend |
+| LocalStack | Open-source AWS service emulator for local development and testing |
+| `endpoint_url` | boto3 client parameter that redirects S3 API calls to an alternative endpoint (e.g., LocalStack) |
+| `_get_s3_client()` | Lazy initialization helper that creates the boto3 S3 client and auto-provisions the bucket on first call |
+| Health-check gate | pytest fixture that polls LocalStack's `/health` endpoint before allowing test execution |
