@@ -15,7 +15,7 @@ import werkzeug
 
 try:
     import boto3  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
-    from botocore.exceptions import ClientError  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
+    from botocore.exceptions import BotoCoreError, ClientError  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
     _boto3_available = True
 except ImportError:
     _boto3_available = False
@@ -181,7 +181,7 @@ class IrAttachment(models.Model):
                 s3 = _get_s3_client()
                 response = s3.get_object(Bucket=_get_s3_bucket(), Key=fname)
                 data = response['Body'].read()
-                if size:
+                if size is not None:
                     data = data[:size]
                 return data
             except ClientError as e:
@@ -189,6 +189,9 @@ class IrAttachment(models.Model):
                     _logger.info("_file_read s3 key missing %s", fname, exc_info=True)
                     return b''
                 raise
+            except BotoCoreError:
+                _logger.info("_file_read s3 connection error %s", fname, exc_info=True)
+                return b''
         full_path = self._full_path(fname)
         try:
             with open(full_path, 'rb') as f:
