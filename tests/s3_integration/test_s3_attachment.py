@@ -1,38 +1,28 @@
-"""S3 integration tests for the ir.attachment storage backend.
+"""S3 integration tests for ``IrAttachment._file_write``, ``_file_read``,
+and ``_file_delete``.
 
-Implements the **7 mandatory test scenarios** (100 % gate) verifying that the
-S3 storage backend in ``ir.attachment`` works correctly with Moto's in-process
-AWS mock.  No Docker, no real AWS credentials, and no Odoo ORM initialisation
-required — pure ``pytest`` + ``moto``.
+Every test invokes one of those three methods as its **primary action**
+with Moto's ``mock_aws`` active, so Moto intercepts the ``boto3`` calls
+that ``ir_attachment.py`` makes internally.
+
+``boto3`` is used in tests **only** for setup (pre-writing objects to S3)
+and assertions (verifying object existence / absence) — never as the
+thing being tested.
+
+Each test docstring states the specific bug in ``ir_attachment.py`` it
+would catch and how.
 
 Test command::
 
     pytest tests/s3_integration/ -v
-
-Each test includes a ``time.monotonic()`` performance assertion ensuring
-every S3 operation completes within the ≤ 500 ms threshold (trivially
-satisfied by Moto's synchronous, in-process mock).
-
-Fixtures
---------
-* ``aws_s3``            — Moto ``mock_aws`` context with pre-provisioned
-                          bucket; yields a ``boto3`` S3 client (see
-                          ``conftest.py``).
-* ``filesystem_storage`` — Ensures ``IR_ATTACHMENT_STORAGE`` is **unset** so
-                          the conditional branch falls through to the
-                          filesystem code path.
 """
 
 import hashlib
-import os
 import time
 
 import boto3
 import pytest
 from botocore.exceptions import ClientError
-from moto import mock_aws  # noqa: F401 — imported for reference / Moto interception test
-
-from odoo.addons.base.models.ir_attachment import IrAttachment  # noqa: F401 — class under test
 
 # ---------------------------------------------------------------------------
 # Constants — kept in sync with conftest.py ``aws_s3`` fixture
@@ -43,36 +33,41 @@ BUCKET_NAME = "odoo-attachments"
 # ---------------------------------------------------------------------------
 # Scenario 1 — Bucket auto-creation is idempotent
 # ---------------------------------------------------------------------------
+def test_bucket_auto_creation_idempotent(aws_s3, attachment):
+    """Primary action: ``_file_write`` (invoked twice).
 
-def test_bucket_auto_creation_idempotent(aws_s3):
-    """Bucket exists after fixture setup; a second ``create_bucket`` is a no-op.
+    Bug caught
+    ~~~~~~~~~~
+    If ``_get_s3_client()`` does **not** catch ``BucketAlreadyOwnedByYou``
+    / ``BucketAlreadyExists`` from the ``create_bucket`` call that runs on
+    every client instantiation, the *second* ``_file_write`` invocation
+    would crash with an unhandled ``ClientError`` because the ``aws_s3``
+    fixture already provisioned the bucket before the test started.
 
-    Pass condition
-    ~~~~~~~~~~~~~~
-    Bucket ``odoo-attachments`` exists after the ``aws_s3`` fixture runs.
-    Calling ``create_bucket`` again with the same name does **not** raise.
-
-    This validates the idempotent bucket provisioning pattern used by
-    ``_get_s3_client()`` in ``ir_attachment.py`` (which catches
-    ``BucketAlreadyOwnedByYou`` / ``BucketAlreadyExists``).
+    How it catches the bug: Each ``_file_write`` call internally invokes
+    ``self._get_s3_client()``, which attempts ``create_bucket``.  The
+    bucket was already created by the fixture, so the ``except
+    ClientError`` handler in ``_get_s3_client()`` must silently swallow
+    ``BucketAlreadyOwnedByYou`` / ``BucketAlreadyExists``.  If that
+    handler is missing or mis-coded, the test fails with an unhandled
+    exception.
     """
     start = time.monotonic()
 
-    # Verify bucket already exists (created by aws_s3 fixture)
-    buckets = aws_s3.list_buckets()
-    bucket_names = [b["Name"] for b in buckets["Buckets"]]
-    assert BUCKET_NAME in bucket_names, (
-        f"Bucket '{BUCKET_NAME}' should exist after fixture setup"
-    )
+    data = b"idempotency test payload"
+    checksum = hashlib.sha1(data).hexdigest()
 
-    # Call create_bucket again — must be idempotent (no exception raised)
-    aws_s3.create_bucket(Bucket=BUCKET_NAME)
+    # First _file_write: internally calls _get_s3_client() → create_bucket
+    # (bucket already exists from fixture — must not crash)
+    attachment._file_write(data, checksum)
 
-    # Verify bucket still exists after idempotent re-creation
-    buckets_after = aws_s3.list_buckets()
-    bucket_names_after = [b["Name"] for b in buckets_after["Buckets"]]
-    assert BUCKET_NAME in bucket_names_after, (
-        f"Bucket '{BUCKET_NAME}' should still exist after idempotent re-creation"
+    # Second _file_write: another fresh client, another create_bucket attempt
+    fname = attachment._file_write(data, checksum)
+
+    # Verify the object is accessible (proves both calls succeeded)
+    response = aws_s3.get_object(Bucket=BUCKET_NAME, Key=fname)
+    assert response["Body"].read() == data, (
+        "Object should be readable after two idempotent _file_write calls"
     )
 
     elapsed = time.monotonic() - start
@@ -84,29 +79,38 @@ def test_bucket_auto_creation_idempotent(aws_s3):
 # ---------------------------------------------------------------------------
 # Scenario 2 — File write to S3
 # ---------------------------------------------------------------------------
+def test_file_write_to_s3(aws_s3, attachment):
+    """Primary action: ``_file_write``.
 
-def test_file_write_to_s3(aws_s3):
-    """Object exists in S3 at the expected key after simulating ``_file_write``.
+    Bug caught
+    ~~~~~~~~~~
+    If ``_file_write`` does not call ``put_object`` in its S3 branch, or
+    uses the wrong key format (e.g. omitting the ``{checksum[:2]}/``
+    prefix), or targets the wrong bucket, the object will not exist at the
+    expected S3 key after the call.
 
-    Pass condition
-    ~~~~~~~~~~~~~~
-    After ``put_object`` using the ``{checksum[:2]}/{checksum}`` key format,
-    the object is retrievable and its body matches the original binary value.
-
-    This mirrors the S3 branch of ``_file_write(bin_value, checksum)`` in
-    ``ir_attachment.py``.
+    How it catches the bug: The test calls ``_file_write(bin_value,
+    checksum)`` and then uses the **fixture** boto3 client to
+    ``get_object`` at the key that ``_file_write`` returned.  A mismatch
+    in key format, missing ``put_object`` call, or wrong bucket causes
+    the ``get_object`` assertion to fail.
     """
     start = time.monotonic()
 
     bin_value = b"test file content for write scenario"
     checksum = hashlib.sha1(bin_value).hexdigest()
-    key = f"{checksum[:2]}/{checksum}"
+    expected_key = f"{checksum[:2]}/{checksum}"
 
-    # Mirror _file_write S3 path: put_object with checksum-based key
-    aws_s3.put_object(Bucket=BUCKET_NAME, Key=key, Body=bin_value)
+    # PRIMARY ACTION — invoke the production method
+    fname = attachment._file_write(bin_value, checksum)
 
-    # Verify object exists and content matches
-    response = aws_s3.get_object(Bucket=BUCKET_NAME, Key=key)
+    # Assert key format matches specification
+    assert fname == expected_key, (
+        f"Expected key '{expected_key}', got '{fname}'"
+    )
+
+    # Assert object content via fixture client (boto3 for assertion only)
+    response = aws_s3.get_object(Bucket=BUCKET_NAME, Key=fname)
     stored_data = response["Body"].read()
     assert stored_data == bin_value, (
         "Stored content should match the original binary value"
@@ -121,33 +125,39 @@ def test_file_write_to_s3(aws_s3):
 # ---------------------------------------------------------------------------
 # Scenario 3 — File read integrity via SHA-1
 # ---------------------------------------------------------------------------
+def test_file_read_integrity_sha1(aws_s3, attachment):
+    """Primary action: ``_file_read``.
 
-def test_file_read_integrity_sha1(aws_s3):
-    """SHA-1 of retrieved content matches the original checksum.
+    Bug caught
+    ~~~~~~~~~~
+    If ``_file_read`` reads from the wrong S3 key, fails to call
+    ``response['Body'].read()``, truncates the data, or returns stale /
+    corrupted bytes, the SHA-1 digest of the returned content will not
+    match the original checksum.
 
-    Pass condition
-    ~~~~~~~~~~~~~~
-    After writing data to S3 and reading it back (mirroring ``_file_read``),
-    computing SHA-1 on the retrieved bytes yields the same digest as the
-    original data — proving zero data corruption across the write/read cycle.
+    How it catches the bug: The test first writes data via
+    ``_file_write`` (setup), then reads it back via ``_file_read``
+    (primary action) and recomputes SHA-1.  Any data corruption, wrong
+    key lookup, or partial read causes the checksum comparison to fail.
     """
     start = time.monotonic()
 
     bin_value = b"integrity test data for SHA-1 verification"
     original_checksum = hashlib.sha1(bin_value).hexdigest()
-    key = f"{original_checksum[:2]}/{original_checksum}"
 
-    # Write to S3 (mirrors _file_write S3 path)
-    aws_s3.put_object(Bucket=BUCKET_NAME, Key=key, Body=bin_value)
+    # Setup — write the object (so there is something to read)
+    fname = attachment._file_write(bin_value, original_checksum)
 
-    # Read back (mirrors _file_read S3 path)
-    response = aws_s3.get_object(Bucket=BUCKET_NAME, Key=key)
-    read_data = response["Body"].read()
+    # PRIMARY ACTION — read via the production method
+    read_data = attachment._file_read(fname)
 
     # Verify SHA-1 integrity
     read_checksum = hashlib.sha1(read_data).hexdigest()
     assert read_checksum == original_checksum, (
         f"SHA-1 mismatch: expected {original_checksum}, got {read_checksum}"
+    )
+    assert read_data == bin_value, (
+        "Read-back bytes should be identical to the original payload"
     )
 
     elapsed = time.monotonic() - start
@@ -159,37 +169,42 @@ def test_file_read_integrity_sha1(aws_s3):
 # ---------------------------------------------------------------------------
 # Scenario 4 — File delete from S3
 # ---------------------------------------------------------------------------
+def test_file_delete_from_s3(aws_s3, attachment):
+    """Primary action: ``_file_delete``.
 
-def test_file_delete_from_s3(aws_s3):
-    """Object is absent from S3 after ``delete_object``.
+    Bug caught
+    ~~~~~~~~~~
+    If ``_file_delete`` does not call ``delete_object`` in its S3 branch
+    (e.g. it falls through to ``_mark_for_gc`` which only works on the
+    local filesystem), or if it targets the wrong bucket / key, the
+    object will persist in S3 after the call.
 
-    Pass condition
-    ~~~~~~~~~~~~~~
-    After writing a test object to S3 and then deleting it (mirroring
-    ``_file_delete``), attempting to retrieve it raises ``ClientError``
-    with error code ``NoSuchKey``.
+    How it catches the bug: The test writes an object via ``_file_write``
+    (setup), invokes ``_file_delete(fname)`` (primary action), and then
+    uses the fixture client to confirm the object is gone (``NoSuchKey``).
+    If ``delete_object`` is never called, the final assertion fails
+    because the object is still present.
     """
     start = time.monotonic()
 
     bin_value = b"data to be deleted"
     checksum = hashlib.sha1(bin_value).hexdigest()
-    key = f"{checksum[:2]}/{checksum}"
 
-    # Write object to S3
-    aws_s3.put_object(Bucket=BUCKET_NAME, Key=key, Body=bin_value)
+    # Setup — write the object first
+    fname = attachment._file_write(bin_value, checksum)
 
-    # Verify it exists before deletion
-    pre_delete = aws_s3.get_object(Bucket=BUCKET_NAME, Key=key)
-    assert pre_delete["Body"].read() == bin_value, (
+    # Verify object exists before deletion (sanity check via fixture client)
+    pre_response = aws_s3.get_object(Bucket=BUCKET_NAME, Key=fname)
+    assert pre_response["Body"].read() == bin_value, (
         "Object should be readable before deletion"
     )
 
-    # Delete object (mirrors _file_delete S3 path)
-    aws_s3.delete_object(Bucket=BUCKET_NAME, Key=key)
+    # PRIMARY ACTION — invoke the production delete method
+    attachment._file_delete(fname)
 
-    # Verify object is gone — must raise ClientError with NoSuchKey
+    # Assert object is absent — must raise ClientError with NoSuchKey
     with pytest.raises(ClientError) as exc_info:
-        aws_s3.get_object(Bucket=BUCKET_NAME, Key=key)
+        aws_s3.get_object(Bucket=BUCKET_NAME, Key=fname)
 
     error_code = exc_info.value.response["Error"]["Code"]
     assert error_code == "NoSuchKey", (
@@ -203,28 +218,31 @@ def test_file_delete_from_s3(aws_s3):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 5 — Missing file returns graceful error
+# Scenario 5 — Missing file returns b'' (graceful error)
 # ---------------------------------------------------------------------------
+def test_missing_file_graceful_error(aws_s3, attachment):
+    """Primary action: ``_file_read`` on a nonexistent S3 key.
 
-def test_missing_file_graceful_error(aws_s3):
-    """Reading a nonexistent S3 key raises ``ClientError`` with ``NoSuchKey``.
+    Bug caught
+    ~~~~~~~~~~
+    If ``_file_read`` does **not** wrap its ``get_object`` call in a
+    ``try … except ClientError`` block, a missing S3 key will raise an
+    unhandled ``ClientError`` instead of returning ``b''`` (which is the
+    contract established by the filesystem code path on ``OSError``).
 
-    Pass condition
-    ~~~~~~~~~~~~~~
-    Attempting ``get_object`` on a key that was never written raises a
-    ``ClientError`` whose error code is ``NoSuchKey`` — **not** an unhandled
-    exception.  This validates the error handling pattern in ``_file_read``,
-    which catches ``ClientError`` and returns ``b''``.
+    How it catches the bug: The test calls ``_file_read`` with a key
+    that was never written.  If the ``except ClientError`` handler is
+    missing or incorrectly re-raises, the test fails with an unhandled
+    exception rather than receiving ``b''``.
     """
     start = time.monotonic()
 
-    # Attempt to read a key that does not exist in the bucket
-    with pytest.raises(ClientError) as exc_info:
-        aws_s3.get_object(Bucket=BUCKET_NAME, Key="nonexistent/key")
+    # PRIMARY ACTION — read a key that does not exist in the bucket
+    result = attachment._file_read("nonexistent/key")
 
-    error_code = exc_info.value.response["Error"]["Code"]
-    assert error_code == "NoSuchKey", (
-        f"Expected 'NoSuchKey' for nonexistent key, got '{error_code}'"
+    # Production _file_read must return b'' for missing keys (not raise)
+    assert result == b"", (
+        f"Expected b'' for missing S3 key, got {result!r}"
     )
 
     elapsed = time.monotonic() - start
@@ -236,31 +254,46 @@ def test_missing_file_graceful_error(aws_s3):
 # ---------------------------------------------------------------------------
 # Scenario 6 — Filesystem fallback when IR_ATTACHMENT_STORAGE is unset
 # ---------------------------------------------------------------------------
+def test_filesystem_fallback(filesystem_attachment):
+    """Primary action: ``_file_write`` with ``IR_ATTACHMENT_STORAGE`` unset.
 
-def test_filesystem_fallback(filesystem_storage):
-    """S3 backend is NOT activated when ``IR_ATTACHMENT_STORAGE`` is unset.
+    Bug caught
+    ~~~~~~~~~~
+    If the conditional check in ``_file_write`` is wrong — for example,
+    using a truthy check (``if os.environ.get('IR_ATTACHMENT_STORAGE')``)
+    instead of the strict equality
+    (``== 's3'``), or if the check is accidentally inverted — the S3
+    code path would execute even when the environment variable is absent.
 
-    Pass condition
-    ~~~~~~~~~~~~~~
-    The ``filesystem_storage`` fixture removes ``IR_ATTACHMENT_STORAGE``
-    from the environment.  This test verifies the conditional check
-    ``os.environ.get('IR_ATTACHMENT_STORAGE') == 's3'`` evaluates to
-    ``False``, proving the filesystem code path would execute.
+    How it catches the bug: The test calls ``_file_write`` **without**
+    ``IR_ATTACHMENT_STORAGE`` set, then verifies via the fixture's boto3
+    client that **zero** objects exist in S3.  If the S3 branch fires
+    incorrectly, at least one S3 object will be found and the assertion
+    fails.  The test does **not** assert boolean expressions about
+    environment variables — it calls the real method and inspects S3
+    state.
     """
+    stub, s3_client = filesystem_attachment
     start = time.monotonic()
 
-    # Verify IR_ATTACHMENT_STORAGE is not set to 's3'
-    storage_value = os.environ.get("IR_ATTACHMENT_STORAGE")
-    assert storage_value != "s3", (
-        f"IR_ATTACHMENT_STORAGE should not be 's3' in filesystem mode, "
-        f"got '{storage_value}'"
+    data = b"filesystem fallback test data"
+    checksum = hashlib.sha1(data).hexdigest()
+
+    # PRIMARY ACTION — call _file_write (filesystem path expected)
+    fname = stub._file_write(data, checksum)
+
+    # fname should be the filesystem-style key, not an error
+    expected_fname = f"{checksum[:2]}/{checksum}"
+    assert fname == expected_fname, (
+        f"Filesystem _file_write should return '{expected_fname}', got '{fname}'"
     )
 
-    # Explicitly verify the conditional branching gate evaluates to False
-    s3_active = os.environ.get("IR_ATTACHMENT_STORAGE") == "s3"
-    assert s3_active is False, (
-        "The S3 conditional check must evaluate to False when the "
-        "environment variable is unset — filesystem path should execute"
+    # ASSERTION — verify NO S3 object was created
+    objects = s3_client.list_objects_v2(Bucket=BUCKET_NAME)
+    key_count = objects.get("KeyCount", 0)
+    assert key_count == 0, (
+        f"S3 should have 0 objects when IR_ATTACHMENT_STORAGE is unset, "
+        f"found {key_count} — the S3 branch executed incorrectly"
     )
 
     elapsed = time.monotonic() - start
@@ -272,36 +305,41 @@ def test_filesystem_fallback(filesystem_storage):
 # ---------------------------------------------------------------------------
 # Scenario 7 — Moto interception confirmed across clients
 # ---------------------------------------------------------------------------
+def test_moto_interception_confirmed(aws_s3, attachment):
+    """Primary action: ``_file_write``.
 
-def test_moto_interception_confirmed(aws_s3):
-    """Separately created boto3 client shares the same Moto mock context.
+    Bug caught
+    ~~~~~~~~~~
+    If ``_get_s3_client()`` caches the ``boto3`` client at module load
+    time, at class level, or at instance level (instead of creating a
+    fresh client per call), the client may have been instantiated
+    **outside** the active ``mock_aws`` context.  In that case Moto
+    cannot intercept the ``put_object`` call, and the object will not
+    appear in the mock S3 state shared by the fixture's client.
 
-    Pass condition
-    ~~~~~~~~~~~~~~
-    A **new** ``boto3`` S3 client (created inside the test, simulating what
-    ``_get_s3_client()`` returns on each call) writes an object.  The
-    ``aws_s3`` **fixture** client can then retrieve that same object.
-
-    This proves both clients share the same Moto ``mock_aws`` context and
-    validates that per-call client instantiation in ``_get_s3_client()``
-    works correctly with Moto — a critical requirement from AAP §0.7.2.
+    How it catches the bug: The test calls ``_file_write`` via the
+    ``attachment`` stub (which internally calls ``_get_s3_client()`` →
+    ``boto3.client('s3', …)`` each time).  It then reads the written
+    object back using the **fixture** client (``aws_s3``).  If both
+    clients do not share the same Moto mock state — meaning per-call
+    instantiation is broken — the fixture client will get ``NoSuchKey``
+    and the assertion fails.
     """
     start = time.monotonic()
 
-    # Create a NEW boto3 S3 client — simulates what _get_s3_client() returns
-    client2 = boto3.client("s3", region_name="us-east-1")
+    data = b"moto-interception-payload"
+    checksum = hashlib.sha1(data).hexdigest()
 
-    # Write an object via the separately created client
-    client2.put_object(
-        Bucket=BUCKET_NAME, Key="test/moto", Body=b"moto-test"
-    )
+    # PRIMARY ACTION — write via the production method
+    fname = attachment._file_write(data, checksum)
 
-    # Read the same object back via the fixture client
-    response = aws_s3.get_object(Bucket=BUCKET_NAME, Key="test/moto")
+    # Read the same object back via the FIXTURE client
+    response = aws_s3.get_object(Bucket=BUCKET_NAME, Key=fname)
     body = response["Body"].read()
-    assert body == b"moto-test", (
-        f"Expected b'moto-test' from fixture client, got {body!r} — "
-        "Moto interception is NOT working: clients do not share mock state"
+    assert body == data, (
+        f"Expected {data!r} from fixture client, got {body!r} — "
+        "Moto interception is NOT working: the client created by "
+        "_get_s3_client() does not share mock state with the fixture client"
     )
 
     elapsed = time.monotonic() - start
