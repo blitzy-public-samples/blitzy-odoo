@@ -1,21 +1,30 @@
 """
-Pytest fixtures for S3 integration testing against LocalStack.
+Pytest fixtures for S3 integration testing through the Odoo ORM against LocalStack.
 
-Provides session-scoped fixtures for:
-- Health-check readiness gate (polls LocalStack health endpoint)
-- boto3 S3 client configured for LocalStack endpoint
-- Idempotent S3 bucket provisioning
+This conftest lets pytest-odoo load the **full Odoo registry** against a real
+PostgreSQL instance.  The ``load_registry`` and ``enable_odoo_test_flag``
+fixtures shipped by the ``pytest-odoo`` plugin are intentionally **not**
+overridden — they initialize the registry and enable the test flag exactly
+as they do for normal Odoo addon tests.
 
-These fixtures are consumed by test_s3_attachment.py and any other tests
-in the tests/s3_integration/ directory.
+Provided fixtures
+-----------------
+* ``localstack_s3_ready``  — session-scoped, autouse health-check readiness gate
+* ``s3_client``            — session-scoped boto3 S3 client (post-condition only)
+* ``s3_bucket``            — session-scoped bucket name (post-condition only)
+* ``odoo_env``             — function-scoped transactional Odoo ``env``; rolls back
+  after each test so the database stays clean
 
-Environment variables (all optional with dev/test defaults):
-    AWS_ENDPOINT_URL     — LocalStack endpoint (default: http://localhost:4566)
-    AWS_ACCESS_KEY_ID    — AWS access key (default: test)
-    AWS_SECRET_ACCESS_KEY — AWS secret key (default: test)
-    AWS_DEFAULT_REGION   — AWS region (default: us-east-1)
-    AWS_S3_BUCKET        — Target S3 bucket name (default: odoo-attachments)
+Environment variables (all optional with dev/test defaults)::
+
+    IR_ATTACHMENT_STORAGE  — must be ``s3`` to activate the S3 backend
+    AWS_ENDPOINT_URL       — LocalStack endpoint (default ``http://localhost:4566``)
+    AWS_ACCESS_KEY_ID      — AWS access key     (default ``test``)
+    AWS_SECRET_ACCESS_KEY  — AWS secret key      (default ``test``)
+    AWS_DEFAULT_REGION     — AWS region           (default ``us-east-1``)
+    AWS_S3_BUCKET          — target bucket name   (default ``odoo-attachments``)
 """
+# S3 storage backend — see IR_ATTACHMENT_STORAGE env var
 
 import os
 import time
@@ -25,30 +34,6 @@ import pytest
 import requests
 from botocore.exceptions import ClientError
 
-# ---------------------------------------------------------------------------
-# pytest-odoo Plugin Neutralisation
-# ---------------------------------------------------------------------------
-# The ``pytest-odoo`` plugin (registered as the ``odoo`` pytest11 entrypoint)
-# ships session- and module-scoped autouse fixtures that attempt to initialise
-# the full Odoo registry against a PostgreSQL database.  These fixtures are
-# irrelevant (and harmful) for the standalone S3 integration tests which
-# require only a LocalStack endpoint.  Overriding them here prevents
-# ``AttributeError: module 'odoo' has no attribute 'tests'`` and similar
-# failures when running ``pytest tests/s3_integration/ -v`` with the plugin
-# installed.  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var
-
-
-@pytest.fixture(scope="session", autouse=True)
-def load_registry():
-    """Override pytest-odoo ``load_registry`` — S3 tests don't need Odoo registry."""
-    yield
-
-
-@pytest.fixture(scope="module", autouse=True)
-def enable_odoo_test_flag():
-    """Override pytest-odoo ``enable_odoo_test_flag`` — S3 tests don't need Odoo config."""
-    yield
-
 
 # ---------------------------------------------------------------------------
 # Fixture 1: LocalStack S3 Readiness Gate
@@ -56,14 +41,12 @@ def enable_odoo_test_flag():
 
 @pytest.fixture(scope="session", autouse=True)
 def localstack_s3_ready():
-    """Poll LocalStack health endpoint until S3 is available (30s timeout).
+    """Poll LocalStack health endpoint until S3 is available (30 s timeout).
 
-    This fixture runs automatically before any test in the session.  It
-    queries the ``/_localstack/health`` endpoint and waits for the ``s3``
-    service to report an *available*, *running*, or *ready* status.
-
-    If the health check does not succeed within 30 seconds the entire test
-    session is gracefully skipped via ``pytest.skip`` — no hanging.
+    Queries ``/_localstack/health`` and waits for the ``s3`` service to
+    report an *available*, *running*, or *ready* status.  If the health
+    check does not succeed within 30 seconds the entire test session is
+    gracefully skipped via ``pytest.skip`` — no hanging.
     """
     endpoint_base = os.environ.get("AWS_ENDPOINT_URL", "http://localhost:4566")
     health_url = endpoint_base.rstrip("/") + "/_localstack/health"
@@ -71,7 +54,7 @@ def localstack_s3_ready():
     poll_interval = 1  # seconds
 
     start = time.monotonic()
-    last_error = None
+    last_error: Exception | None = None
 
     while time.monotonic() - start < timeout:
         try:
@@ -87,11 +70,11 @@ def localstack_s3_ready():
         except requests.Timeout as exc:
             last_error = exc
         except ValueError as exc:
-            # Malformed JSON response — retry
+            # Malformed JSON — retry
             last_error = exc
         time.sleep(poll_interval)
 
-    # Timeout exhausted — skip the entire test session gracefully
+    # Timeout exhausted — skip the entire session gracefully
     skip_msg = "LocalStack S3 not available"
     if last_error is not None:
         skip_msg += f" (last error: {last_error!r})"
@@ -99,20 +82,17 @@ def localstack_s3_ready():
 
 
 # ---------------------------------------------------------------------------
-# Fixture 2: boto3 S3 Client
+# Fixture 2: boto3 S3 Client (post-condition verification ONLY)
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
 def s3_client():
     """Create a boto3 S3 client configured for LocalStack.
 
-    The client is constructed using environment variables with sensible
-    dev/test defaults that target a local LocalStack instance:
-
-    * ``endpoint_url``        — from ``AWS_ENDPOINT_URL`` (default ``http://localhost:4566``)
-    * ``aws_access_key_id``   — from ``AWS_ACCESS_KEY_ID`` (default ``test``)
-    * ``aws_secret_access_key`` — from ``AWS_SECRET_ACCESS_KEY`` (default ``test``)
-    * ``region_name``         — from ``AWS_DEFAULT_REGION`` (default ``us-east-1``)
+    This client is intended **exclusively** for post-condition verification
+    (e.g. ``head_object`` to confirm an object exists or is absent after
+    an ORM call).  Tests must **never** call ``put_object`` /
+    ``get_object`` / ``delete_object`` directly.
 
     Returns:
         botocore.client.S3: A configured S3 client instance.
@@ -127,31 +107,56 @@ def s3_client():
 
 
 # ---------------------------------------------------------------------------
-# Fixture 3: Idempotent S3 Bucket Provisioning
+# Fixture 3: S3 Bucket Name
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
-def s3_bucket(s3_client):
-    """Create the S3 bucket idempotently and return its name.
+def s3_bucket():
+    """Return the configured S3 bucket name.
 
-    Uses ``create_bucket`` and silently handles the case where the bucket
-    already exists (``BucketAlreadyOwnedByYou`` or ``BucketAlreadyExists``
-    error codes).
-
-    The bucket name is read from the ``AWS_S3_BUCKET`` environment variable,
-    defaulting to ``odoo-attachments``.
-
-    Args:
-        s3_client: The boto3 S3 client fixture.
+    The bucket is auto-created by ``_get_s3_client()`` inside
+    ``ir_attachment.py`` on the first ORM call that touches the S3
+    backend, so no explicit creation is required here.
 
     Returns:
         str: The bucket name (e.g. ``odoo-attachments``).
     """
-    bucket_name = os.environ.get("AWS_S3_BUCKET", "odoo-attachments")
+    return os.environ.get("AWS_S3_BUCKET", "odoo-attachments")
+
+
+# ---------------------------------------------------------------------------
+# Fixture 4: Transactional Odoo Environment
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def odoo_env():
+    """Yield a transactional Odoo ``env`` with ``ir.attachment`` available.
+
+    A new database cursor is opened against the test database (configured
+    via ``--odoo-database``).  The cursor is **rolled back** after the test
+    body finishes — this keeps the PostgreSQL database clean between tests
+    while still exercising real ORM write / read / delete paths.
+
+    .. note::
+
+       S3 operations are **not** transactional.  Objects written to S3
+       during a test persist even after the DB rollback.  Because each
+       test uses unique data (different SHA-1 checksums) this does not
+       affect test isolation.
+
+    Yields:
+        odoo.api.Environment: A fully-initialised Odoo environment bound
+        to a fresh, uncommitted database transaction.
+    """
+    import odoo  # noqa: E402 — available after pytest-odoo loads the registry
+    from odoo.tests.common import get_db_name
+
+    db_name = get_db_name()
+    registry = odoo.modules.registry.Registry(db_name)
+    cr = registry.cursor()
     try:
-        s3_client.create_bucket(Bucket=bucket_name)
-    except ClientError as exc:
-        error_code = exc.response["Error"]["Code"]
-        if error_code not in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
-            raise
-    return bucket_name
+        env = odoo.api.Environment(cr, odoo.SUPERUSER_ID, {})
+        yield env
+    finally:
+        cr.rollback()
+        cr.close()

@@ -1,151 +1,173 @@
 """
-S3 Attachment Integration Test Suite.
+True Odoo-to-S3 integration tests for ``ir.attachment``.
 
-Validates all S3 operations against LocalStack, simulating the S3 backend
-that the modified ir_attachment._file_write, _file_read, and _file_delete
-methods use when IR_ATTACHMENT_STORAGE=s3 is set.
+Every test exercises the **actual** ``ir.attachment`` model methods
+(``_file_write``, ``_file_read``, ``_file_delete``) through the Odoo ORM.
+``boto3`` is used **only** for post-condition verification — never for the
+operations under test.
 
-Six mandatory test scenarios (AAP §0.7.3 — 100% gate):
-    1. test_bucket_auto_creation  — Idempotent bucket creation
-    2. test_file_write            — Object exists at {checksum[:2]}/{checksum}
-    3. test_file_read_integrity   — SHA1 hash comparison after round-trip
-    4. test_file_delete           — Object absent after delete
-    5. test_missing_file_error    — Graceful error on nonexistent key
-    6. test_filesystem_fallback   — S3 not invoked when env var is unset
+All six AAP §0.7.3 scenarios are covered:
 
-Performance: every S3 operation asserts elapsed time ≤ 500 ms via
-``time.monotonic()`` (AAP §0.7.3).
+=====  =============================  ============================================
+  #    Scenario                       How it is triggered
+=====  =============================  ============================================
+  1    Bucket auto-creation           ``ir.attachment.create(…)`` triggers
+                                      ``_get_s3_client()`` which auto-creates the
+                                      bucket idempotently.
+  2    File write                     ``ir.attachment.create(…)`` — internally
+                                      calls ``_file_write(raw, checksum)``.
+  3    File read integrity            ``attach.raw`` access — triggers
+                                      ``_file_read(store_fname)`` via ORM.
+  4    File delete                    ``_file_delete(store_fname)`` called
+                                      through the model.
+  5    Missing file graceful error    ``_file_read(nonexistent_key)`` — returns
+                                      ``b''`` without raising.
+  6    Filesystem fallback            ``ir.attachment.create(…)`` with
+                                      ``IR_ATTACHMENT_STORAGE`` unset — data
+                                      lands on disk, **not** in S3.
+=====  =============================  ============================================
+
+Performance assertions
+~~~~~~~~~~~~~~~~~~~~~~
+Each operation is wrapped in a ``time.monotonic()`` delta check
+(≤ 500 ms).  The timing covers the full ORM call, not a raw ``boto3``
+call.
+
+Prerequisites
+~~~~~~~~~~~~~
+* ``IR_ATTACHMENT_STORAGE=s3`` must be set in the process environment.
+* LocalStack must be running (health-check fixture handles gating).
+* Odoo base module must be installed in the test database
+  (``--odoo-database``).
 """
+# S3 storage backend — see IR_ATTACHMENT_STORAGE env var
 
+import base64
 import hashlib
 import os
 import time
 
-import boto3
 import pytest
 from botocore.exceptions import ClientError
 
 
 # ---------------------------------------------------------------------------
-# Test 1: Bucket Auto-Creation (idempotent)
+# Test 1: Bucket Auto-Creation
 # ---------------------------------------------------------------------------
 
-def test_bucket_auto_creation(s3_client, s3_bucket):
-    """Verify bucket exists after idempotent creation and re-creation is safe.
+def test_bucket_auto_creation(odoo_env, s3_client, s3_bucket):
+    """Bucket exists after an ORM create triggers the S3 backend; repeat
+    calls are idempotent.
 
-    The ``s3_bucket`` fixture already creates the bucket once.  This test
-    confirms the bucket is listed and that calling ``create_bucket`` a
-    second time does **not** raise an error (idempotent behaviour required
-    by AAP §0.7.3 scenario 1).
-
-    Pass condition: Bucket exists after Odoo init, idempotent on repeat calls.
+    Pass condition (AAP §0.7.3 scenario 1): Bucket exists after Odoo init,
+    idempotent on repeat calls.
     """
-    # Verify the bucket created by the fixture appears in list_buckets
-    response = s3_client.list_buckets()
-    bucket_names = [b["Name"] for b in response["Buckets"]]
-    assert s3_bucket in bucket_names, (
-        f"Expected bucket '{s3_bucket}' in list_buckets response, "
-        f"got: {bucket_names}"
-    )
+    data = b"bucket auto-creation test payload"
+    b64_data = base64.b64encode(data).decode()
 
-    # Idempotent re-creation — must not raise an error
     start = time.monotonic()
-    try:
-        s3_client.create_bucket(Bucket=s3_bucket)
-    except ClientError as exc:
-        error_code = exc.response["Error"]["Code"]
-        # BucketAlreadyOwnedByYou and BucketAlreadyExists are acceptable
-        assert error_code in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"), (
-            f"Unexpected error on idempotent create_bucket: {error_code}"
-        )
+    odoo_env["ir.attachment"].create({
+        "name": "test_bucket_auto_creation.txt",
+        "datas": b64_data,
+    })
     elapsed = time.monotonic() - start
     assert elapsed <= 0.5, (
-        f"S3 create_bucket (idempotent) took {elapsed:.3f}s, exceeding 500ms limit"
+        f"ORM create took {elapsed:.3f}s, exceeding 500 ms limit"
     )
 
-    # Confirm bucket still present after re-creation attempt
-    response_after = s3_client.list_buckets()
-    bucket_names_after = [b["Name"] for b in response_after["Buckets"]]
-    assert s3_bucket in bucket_names_after, (
-        f"Bucket '{s3_bucket}' disappeared after idempotent create_bucket call"
+    # Post-condition: the bucket must exist in S3
+    buckets = s3_client.list_buckets()
+    bucket_names = [b["Name"] for b in buckets["Buckets"]]
+    assert s3_bucket in bucket_names, (
+        f"Bucket '{s3_bucket}' not found after ORM create. Available: {bucket_names}"
     )
+
+    # Idempotent: importing and calling the lazy initialiser again must not raise
+    from odoo.addons.base.models.ir_attachment import _get_s3_client
+    _get_s3_client()  # no-op — bucket already exists
 
 
 # ---------------------------------------------------------------------------
 # Test 2: File Write
 # ---------------------------------------------------------------------------
 
-def test_file_write(s3_client, s3_bucket):
-    """Verify an object exists in S3 at the expected key after a simulated write.
+def test_file_write(odoo_env, s3_client, s3_bucket):
+    """S3 object exists at ``{checksum[:2]}/{checksum}`` after
+    ``ir.attachment.create(…)``.
 
-    Mirrors the ``_file_write`` method in ``ir_attachment.py``:
-    - Compute SHA1 checksum of the binary value
-    - Derive the S3 key as ``{checksum[:2]}/{checksum}`` (same pattern as
-      ``_get_path`` at line 122 of the source)
-    - Upload via ``put_object``
-    - Assert the object can be found via ``head_object``
-
-    Pass condition (AAP §0.7.3 scenario 2): Object exists in S3 at expected
-    key ``{checksum[:2]}/{checksum}`` after ``_file_write``.
+    Pass condition (AAP §0.7.3 scenario 2): Object exists in S3 at
+    expected key after ``_file_write``.
     """
-    bin_value = b"test file content for s3 write"
-    checksum = hashlib.sha1(bin_value).hexdigest()
-    key = f"{checksum[:2]}/{checksum}"
+    data = b"s3 file write integration test data"
+    b64_data = base64.b64encode(data).decode()
+    checksum = hashlib.sha1(data).hexdigest()
+    expected_key = f"{checksum[:2]}/{checksum}"
 
-    # Simulated _file_write — timed put_object
     start = time.monotonic()
-    s3_client.put_object(Bucket=s3_bucket, Key=key, Body=bin_value)
+    attach = odoo_env["ir.attachment"].create({
+        "name": "test_file_write.bin",
+        "datas": b64_data,
+    })
     elapsed = time.monotonic() - start
     assert elapsed <= 0.5, (
-        f"S3 put_object took {elapsed:.3f}s, exceeding 500ms limit"
+        f"ORM create took {elapsed:.3f}s, exceeding 500 ms limit"
     )
 
-    # Verify the object exists at the expected key
-    head = s3_client.head_object(Bucket=s3_bucket, Key=key)
-    assert head["ContentLength"] == len(bin_value), (
-        f"Expected ContentLength {len(bin_value)}, got {head['ContentLength']}"
+    # The ORM record should reference the expected key
+    assert attach.store_fname == expected_key, (
+        f"store_fname mismatch: expected {expected_key!r}, got {attach.store_fname!r}"
+    )
+
+    # Post-condition: object exists in S3 at the expected key
+    head = s3_client.head_object(Bucket=s3_bucket, Key=expected_key)
+    assert head["ContentLength"] == len(data), (
+        f"Expected ContentLength {len(data)}, got {head['ContentLength']}"
     )
 
 
 # ---------------------------------------------------------------------------
-# Test 3: File Read Integrity (SHA1 verification)
+# Test 3: File Read Integrity (SHA-1 verification)
 # ---------------------------------------------------------------------------
 
-def test_file_read_integrity(s3_client, s3_bucket):
-    """Verify content retrieved from S3 matches original data via SHA1 hash.
+def test_file_read_integrity(odoo_env, s3_client, s3_bucket):
+    """Content read back through the ORM matches the original data via
+    SHA-1 hash comparison.
 
-    Round-trip test:
-    1. Upload known data to S3 at ``{checksum[:2]}/{checksum}``
-    2. Read it back via ``get_object``
-    3. Recompute SHA1 of retrieved bytes and compare to original checksum
-    4. Also verify byte-exact equality
+    Round-trip:
+      1. ``ir.attachment.create(…)``  →  data lands in S3
+      2. ``attach.raw``               →  triggers ``_file_read``
+      3. SHA-1(retrieved) == SHA-1(original)
 
     Pass condition (AAP §0.7.3 scenario 3): Content retrieved by
-    ``_file_read`` matches original via SHA1 hash comparison.
+    ``_file_read`` matches original via SHA-1 hash comparison.
     """
-    original_data = b"integrity check data for s3 read"
-    checksum = hashlib.sha1(original_data).hexdigest()
-    key = f"{checksum[:2]}/{checksum}"
+    original_data = b"integrity check data for s3 read via odoo orm"
+    b64_data = base64.b64encode(original_data).decode()
+    original_checksum = hashlib.sha1(original_data).hexdigest()
 
-    # Upload the data
-    s3_client.put_object(Bucket=s3_bucket, Key=key, Body=original_data)
+    attach = odoo_env["ir.attachment"].create({
+        "name": "test_read_integrity.dat",
+        "datas": b64_data,
+    })
 
-    # Simulated _file_read — timed get_object
+    # Invalidate computed-field cache so _compute_raw triggers _file_read
+    attach.invalidate_recordset(["raw"])
+
+    # Read back through the ORM — this triggers _file_read from S3
     start = time.monotonic()
-    response = s3_client.get_object(Bucket=s3_bucket, Key=key)
-    retrieved_data = response["Body"].read()
+    retrieved_data = attach.raw
     elapsed = time.monotonic() - start
     assert elapsed <= 0.5, (
-        f"S3 get_object took {elapsed:.3f}s, exceeding 500ms limit"
+        f"ORM raw read took {elapsed:.3f}s, exceeding 500 ms limit"
     )
 
-    # SHA1 integrity verification
-    retrieved_hash = hashlib.sha1(retrieved_data).hexdigest()
-    assert retrieved_hash == checksum, (
-        f"SHA1 mismatch: expected {checksum}, got {retrieved_hash}"
+    # SHA-1 integrity verification
+    retrieved_checksum = hashlib.sha1(retrieved_data).hexdigest()
+    assert retrieved_checksum == original_checksum, (
+        f"SHA-1 mismatch: expected {original_checksum}, got {retrieved_checksum}"
     )
 
-    # Byte-exact match
+    # Byte-exact equality
     assert retrieved_data == original_data, (
         "Retrieved bytes do not match the original data"
     )
@@ -155,38 +177,42 @@ def test_file_read_integrity(s3_client, s3_bucket):
 # Test 4: File Delete
 # ---------------------------------------------------------------------------
 
-def test_file_delete(s3_client, s3_bucket):
-    """Verify object is absent from S3 after a delete operation.
+def test_file_delete(odoo_env, s3_client, s3_bucket):
+    """S3 object is absent after ``_file_delete``.
 
     Sequence:
-    1. Upload a test object
-    2. Confirm it exists via ``head_object``
-    3. Delete it via ``delete_object``
-    4. Verify it is absent — ``head_object`` must raise ``ClientError``
-       with HTTP status 404
+      1. ``ir.attachment.create(…)``  →  data lands in S3
+      2. Confirm the object exists    (post-condition ``head_object``)
+      3. ``_file_delete(store_fname)``
+      4. Confirm the object is absent (``head_object`` raises 404)
 
     Pass condition (AAP §0.7.3 scenario 4): Object absent from S3 after
     ``_file_delete``.
     """
-    bin_value = b"data to be deleted from s3"
-    checksum = hashlib.sha1(bin_value).hexdigest()
-    key = f"{checksum[:2]}/{checksum}"
+    data = b"data to be deleted via odoo _file_delete"
+    b64_data = base64.b64encode(data).decode()
+    checksum = hashlib.sha1(data).hexdigest()
+    expected_key = f"{checksum[:2]}/{checksum}"
 
-    # Upload and confirm existence
-    s3_client.put_object(Bucket=s3_bucket, Key=key, Body=bin_value)
-    s3_client.head_object(Bucket=s3_bucket, Key=key)  # must not raise
+    attach = odoo_env["ir.attachment"].create({
+        "name": "test_file_delete.bin",
+        "datas": b64_data,
+    })
 
-    # Simulated _file_delete — timed delete_object
+    # Pre-condition: object must exist in S3 after create
+    s3_client.head_object(Bucket=s3_bucket, Key=expected_key)  # must not raise
+
+    # Delete through the ORM model method
     start = time.monotonic()
-    s3_client.delete_object(Bucket=s3_bucket, Key=key)
+    odoo_env["ir.attachment"]._file_delete(expected_key)
     elapsed = time.monotonic() - start
     assert elapsed <= 0.5, (
-        f"S3 delete_object took {elapsed:.3f}s, exceeding 500ms limit"
+        f"_file_delete took {elapsed:.3f}s, exceeding 500 ms limit"
     )
 
-    # Verify object is absent — head_object should raise ClientError (404)
+    # Post-condition: object must be absent in S3
     with pytest.raises(ClientError) as exc_info:
-        s3_client.head_object(Bucket=s3_bucket, Key=key)
+        s3_client.head_object(Bucket=s3_bucket, Key=expected_key)
 
     error_code = exc_info.value.response["Error"]["Code"]
     assert error_code in ("404", "NoSuchKey"), (
@@ -198,97 +224,78 @@ def test_file_delete(s3_client, s3_bucket):
 # Test 5: Missing File Graceful Error
 # ---------------------------------------------------------------------------
 
-def test_missing_file_error(s3_client, s3_bucket):
-    """Verify reading a nonexistent key returns a graceful error.
+def test_missing_file_error(odoo_env):
+    """``_file_read`` on a nonexistent S3 key returns ``b''`` — not an
+    unhandled exception.
 
-    Mirrors the graceful error handling in ``ir_attachment._file_read``
-    (lines 140–142 of the source) which catches ``OSError`` and returns
-    ``b''``.  The S3 equivalent catches ``ClientError`` with code
-    ``NoSuchKey`` and degrades gracefully to ``b''``.
+    The S3 backend in ``_file_read`` catches ``ClientError`` with code
+    ``NoSuchKey`` and degrades gracefully to ``b''``, mirroring the
+    existing filesystem behaviour.
 
     Pass condition (AAP §0.7.3 scenario 5): ``_file_read`` on nonexistent
     key raises graceful error, not unhandled exception.
     """
     missing_key = "ff/ffffffffffffffffffffffffffffffffffffffff"
-    graceful_result = None
 
     start = time.monotonic()
-    try:
-        s3_client.get_object(Bucket=s3_bucket, Key=missing_key)
-        # If we reach here, something unexpected happened — the key should
-        # not exist.  Fail the test explicitly.
-        pytest.fail("get_object did not raise ClientError for a nonexistent key")
-    except ClientError as exc:
-        error_code = exc.response["Error"]["Code"]
-        assert error_code == "NoSuchKey", (
-            f"Expected NoSuchKey error, got: {error_code}"
-        )
-        # Graceful degradation: mimic _file_read by returning b''
-        graceful_result = b""
+    result = odoo_env["ir.attachment"]._file_read(missing_key)
     elapsed = time.monotonic() - start
     assert elapsed <= 0.5, (
-        f"S3 get_object (missing key) took {elapsed:.3f}s, exceeding 500ms limit"
+        f"_file_read (missing key) took {elapsed:.3f}s, exceeding 500 ms limit"
     )
 
-    # Verify the graceful fallback produces the empty bytes sentinel
-    assert graceful_result == b"", (
-        f"Expected graceful fallback to b'', got: {graceful_result!r}"
+    assert result == b"", (
+        f"Expected b'' for missing S3 key, got: {result!r}"
     )
 
 
 # ---------------------------------------------------------------------------
-# Test 6: Filesystem Fallback (no S3 calls)
+# Test 6: Filesystem Fallback (no S3 calls when env var is unset)
 # ---------------------------------------------------------------------------
 
-def test_filesystem_fallback():
-    """Verify the filesystem fallback when IR_ATTACHMENT_STORAGE is unset.
+def test_filesystem_fallback(odoo_env, s3_client, s3_bucket):
+    """When ``IR_ATTACHMENT_STORAGE`` is **not** ``'s3'``, the attachment
+    data lands on the local filesystem and **no** S3 object is created.
 
-    When ``IR_ATTACHMENT_STORAGE`` is **not** set to ``'s3'``, the S3 code
-    path must not be invoked.  This test:
-    1. Ensures the env var is removed (or was never set)
-    2. Validates that the S3-activation guard evaluates to ``False``
-    3. Makes **zero** S3 client calls
-
-    No ``s3_client`` or ``s3_bucket`` fixtures are used — this test runs
-    entirely without S3 connectivity requirements.
+    Sequence:
+      1. Remove ``IR_ATTACHMENT_STORAGE`` from the process environment
+      2. ``ir.attachment.create(…)``  →  data goes to the local filestore
+      3. ``head_object`` on the would-be S3 key confirms absence (404)
 
     Pass condition (AAP §0.7.3 scenario 6): When ``IR_ATTACHMENT_STORAGE``
     is unset, existing filesystem path executes and S3 is not called.
     """
-    # Save original value (if any) for safe restoration
     original_value = os.environ.pop("IR_ATTACHMENT_STORAGE", None)
 
     try:
+        data = b"filesystem fallback test data - no s3"
+        b64_data = base64.b64encode(data).decode()
+        checksum = hashlib.sha1(data).hexdigest()
+        expected_key = f"{checksum[:2]}/{checksum}"
+
         start = time.monotonic()
-
-        # The guard condition used in ir_attachment.py S3 branches:
-        storage_value = os.environ.get("IR_ATTACHMENT_STORAGE")
-        s3_active = storage_value == "s3"
-
-        # Verify S3 is NOT active
-        assert not s3_active, (
-            f"Expected S3 backend to be inactive when IR_ATTACHMENT_STORAGE "
-            f"is unset, but got storage_value={storage_value!r}"
-        )
-
-        # Confirm the environment variable is truly absent
-        assert os.environ.get("IR_ATTACHMENT_STORAGE") is None, (
-            "IR_ATTACHMENT_STORAGE should not be set in the environment"
-        )
-
-        # Also verify that explicitly setting to a non-s3 value still
-        # keeps the filesystem fallback active
-        os.environ["IR_ATTACHMENT_STORAGE"] = "file"
-        assert os.environ.get("IR_ATTACHMENT_STORAGE") != "s3", (
-            "Setting IR_ATTACHMENT_STORAGE='file' should not activate S3"
-        )
-
+        attach = odoo_env["ir.attachment"].create({
+            "name": "test_filesystem_fallback.txt",
+            "datas": b64_data,
+        })
         elapsed = time.monotonic() - start
         assert elapsed <= 0.5, (
-            f"Filesystem fallback check took {elapsed:.3f}s, exceeding 500ms limit"
+            f"ORM create (filesystem path) took {elapsed:.3f}s, exceeding 500 ms limit"
         )
+
+        # The store_fname should still be set (filesystem uses same format)
+        assert attach.store_fname, "store_fname should be set for filesystem storage"
+
+        # Post-condition: the object must NOT exist in S3
+        with pytest.raises(ClientError) as exc_info:
+            s3_client.head_object(Bucket=s3_bucket, Key=expected_key)
+
+        error_code = exc_info.value.response["Error"]["Code"]
+        assert error_code in ("404", "NoSuchKey"), (
+            f"Expected S3 object to be absent (404/NoSuchKey), got: {error_code}"
+        )
+
     finally:
-        # Restore original environment state
-        os.environ.pop("IR_ATTACHMENT_STORAGE", None)
+        # Restore the original environment variable
         if original_value is not None:
             os.environ["IR_ATTACHMENT_STORAGE"] = original_value
