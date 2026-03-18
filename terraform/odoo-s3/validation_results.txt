@@ -1,6 +1,6 @@
 ============================================================
   Odoo S3 Terraform Module — Validation Suite
-  Started: 2026-03-18T19:43:11Z
+  Started: 2026-03-18T20:05:41Z
 ============================================================
 
 ============================================================
@@ -15,11 +15,11 @@
   Gate 2: S3 Object Lifecycle (using Terraform credentials)
 ============================================================
   [PASS] Extracted IAM credentials from terraform output
-Completed 55 Bytes/55 Bytes (6.7 KiB/s) with 1 file(s) remainingupload: ../../../../../odoo_s3_validate_test.txt to s3://odoo-attachments/validate-test.txt
+Completed 55 Bytes/55 Bytes (7.9 KiB/s) with 1 file(s) remainingupload: ../../../../../odoo_s3_validate_test.txt to s3://odoo-attachments/validate-test.txt
   [PASS] Upload: validate-test.txt uploaded to s3://odoo-attachments/ (retry)
   [PASS] List: validate-test.txt found in bucket listing
   [PASS] Download: validate-test.txt downloaded successfully
-  [PASS] Verify: Downloaded content matches uploaded content (MD5: 4b5e38f25bf5c15cf24dcbc0af12d6e3)
+  [PASS] Verify: Downloaded content matches uploaded content (MD5: e4d0d005a2364638cdbf6e65bef91a82)
   [PASS] Delete: validate-test.txt removed from bucket
   [PASS] Post-delete: validate-test.txt confirmed removed
 
@@ -52,7 +52,7 @@ Completed 55 Bytes/55 Bytes (6.7 KiB/s) with 1 file(s) remainingupload: ../../.
   Total checks : 22
   Passed       : 22
   Failed       : 0
-  Completed    : 2026-03-18T19:43:51Z
+  Completed    : 2026-03-18T20:06:20Z
 ============================================================
 
   *** ALL CHECKS PASSED — Module is fully validated ***
