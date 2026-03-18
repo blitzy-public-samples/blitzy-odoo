@@ -16,7 +16,8 @@
 # Versioning is handled by a dedicated aws_s3_bucket_versioning resource below
 # to maintain a clean separation of concerns and an explicit resource count.
 resource "aws_s3_bucket" "odoo_attachments" {
-  bucket = var.bucket_name
+  bucket        = var.bucket_name
+  force_destroy = true
 }
 
 # Resource 2: Enable versioning on the Odoo attachments bucket.
