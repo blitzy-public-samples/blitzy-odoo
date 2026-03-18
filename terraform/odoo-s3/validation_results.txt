@@ -1,0 +1,60 @@
+============================================================
+  Odoo S3 Terraform Module — Validation Suite
+  Started: 2026-03-18T19:43:11Z
+============================================================
+
+============================================================
+  Gate 1: Infrastructure Verification
+============================================================
+  [PASS] S3 bucket 'odoo-attachments' exists
+  [PASS] IAM user 'odoo-s3' exists
+  [PASS] Bucket versioning status is 'Enabled'
+  [PASS] IAM policy 'odoo-s3-policy' exists
+
+============================================================
+  Gate 2: S3 Object Lifecycle (using Terraform credentials)
+============================================================
+  [PASS] Extracted IAM credentials from terraform output
+Completed 55 Bytes/55 Bytes (6.7 KiB/s) with 1 file(s) remainingupload: ../../../../../odoo_s3_validate_test.txt to s3://odoo-attachments/validate-test.txt
+  [PASS] Upload: validate-test.txt uploaded to s3://odoo-attachments/ (retry)
+  [PASS] List: validate-test.txt found in bucket listing
+  [PASS] Download: validate-test.txt downloaded successfully
+  [PASS] Verify: Downloaded content matches uploaded content (MD5: 4b5e38f25bf5c15cf24dcbc0af12d6e3)
+  [PASS] Delete: validate-test.txt removed from bucket
+  [PASS] Post-delete: validate-test.txt confirmed removed
+
+============================================================
+  Gate 3: Idempotency (destroy → apply round-trip)
+============================================================
+  [PASS] Destroy: terraform destroy completed (6 destroyed)
+  [PASS] Apply: terraform apply completed with exactly 6 resources added
+  [PASS] Post-apply: S3 bucket 'odoo-attachments' exists after round-trip
+  [PASS] Post-apply: IAM user 'odoo-s3' exists after round-trip
+  [PASS] Post-apply: Bucket versioning 'Enabled' after round-trip
+
+============================================================
+  Gate 4: Odoo Configuration (debian/odoo.conf)
+============================================================
+  [PASS] odoo.conf contains 'aws_access_key_id'
+  [PASS] odoo.conf contains 'aws_secret_access_key'
+  [PASS] odoo.conf contains 'aws_region'
+  [PASS] odoo.conf contains 'aws_s3_bucket'
+  [PASS] odoo.conf contains LocalStack dev comment
+
+============================================================
+  Gate 5: Test Preservation (blitzy-localstack/tests/)
+============================================================
+  [PASS] Zero files modified under blitzy-localstack/tests/
+
+============================================================
+  SUMMARY
+============================================================
+  Total checks : 22
+  Passed       : 22
+  Failed       : 0
+  Completed    : 2026-03-18T19:43:51Z
+============================================================
+
+  *** ALL CHECKS PASSED — Module is fully validated ***
+
+EXIT_CODE=0
