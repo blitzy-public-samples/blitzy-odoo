@@ -43,6 +43,8 @@ Before using this module, ensure the following requirements are met:
    terraform version
    ```
 
+6. **Terraform Google Provider** — this module requires the `hashicorp/google` Terraform provider version `>= 5.0`. The provider is downloaded automatically during `terraform init`; no manual installation is needed.
+
 ## Usage
 
 Follow the standard Terraform workflow to provision the infrastructure:
@@ -108,7 +110,7 @@ You can override any variable using one of the following methods:
 | `bucket_name` | The name of the created GCS bucket | No |
 | `service_account_email` | The email address of the created service account | No |
 | `service_account_key` | The base64-encoded JSON key for the service account | **Yes** |
-| `project` | The GCP project ID used for resource creation | No |
+| `project` | The GCP project ID | No |
 
 To view a specific output after applying:
 
@@ -173,7 +175,8 @@ After provisioning the infrastructure, configure Odoo to use the GCS bucket for 
 For automated deployments, the `debian/odoo.conf` file includes placeholder settings for GCS integration:
 
 ```ini
-; GCS attachment storage settings (placeholders — override in production)
+; GCS attachment storage settings — placeholders to be overridden in production
+; via environment variables or GCP Secret Manager
 ir_attachment_location = gs://odoo-attachments
 google_drive_client_id =
 google_drive_client_secret =
