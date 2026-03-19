@@ -1,0 +1,16 @@
+# Terraform state files — contain sensitive data including service account private keys
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+
+# Variable override files that may contain sensitive values
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Decoded service account key file (generated via terraform output)
+sa-key.json
