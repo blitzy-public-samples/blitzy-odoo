@@ -13,6 +13,43 @@ import pytest
 from moto import mock_aws
 
 
+@pytest.fixture(scope='session', autouse=True)
+def load_registry():
+    """Override pytest-odoo's ``load_registry`` session fixture.
+
+    The S3 integration tests exercise boto3/Moto operations directly
+    and do not require the Odoo ORM registry or a PostgreSQL database.
+    This no-op override prevents pytest-odoo from attempting to
+    initialise the Odoo registry at session start.
+    """
+    # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+    yield
+
+
+@pytest.fixture(scope='module', autouse=True)
+def enable_odoo_test_flag():
+    """Override pytest-odoo's ``enable_odoo_test_flag`` module fixture.
+
+    The S3 integration tests do not use Odoo's ``tools.config`` and
+    therefore do not need the ``test_enable`` flag toggled.  This
+    no-op override avoids the ``AttributeError`` that occurs when
+    ``odoo.tools`` is not fully initialised.
+    """
+    # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+    yield
+
+
+@pytest.fixture(scope='module', autouse=True)
+def load_http():
+    """Override pytest-odoo's ``load_http`` module fixture.
+
+    The S3 integration tests do not start or require an Odoo HTTP
+    server.  This no-op override skips server startup entirely.
+    """
+    # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+    yield
+
+
 @pytest.fixture
 def aws_s3(monkeypatch):
     """Fixture that provides a Moto-backed S3 client with all environment
