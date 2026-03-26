@@ -9,6 +9,8 @@ _build/
 !.mailmap
 !.weblate.json
 !.env.example
+# environment variable files (prevent credential leaks)
+.env
 # compiled python files
 *.py[co]
 __pycache__/
