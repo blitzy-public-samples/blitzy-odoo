@@ -39,6 +39,8 @@ Before using this module, ensure the following requirements are met:
 
 5. **Terraform CLI** — Install [Terraform](https://developer.hashicorp.com/terraform/install) version >= 1.0 (recommended).
 
+6. **Google Terraform Provider** — This module requires the `hashicorp/google` Terraform provider version `>= 5.0` (declared in `versions.tf`). The provider is downloaded automatically during `terraform init`.
+
 ## Usage
 
 Navigate to the module directory and run the standard Terraform workflow:
@@ -207,9 +209,8 @@ This module provisions the following four GCP resources:
 - **Key Rotation:** Periodically rotate the service account key using:
 
   ```bash
-  # Delete the old key and re-apply to generate a new one
-  terraform taint google_service_account_key.odoo_gcs_key
-  terraform apply -var="project=YOUR_GCP_PROJECT_ID"
+  # Replace the old key by forcing Terraform to recreate it
+  terraform apply -replace="google_service_account_key.odoo_gcs_key" -var="project=YOUR_GCP_PROJECT_ID"
   ```
 
   Update the Odoo configuration with the new decoded key after rotation.
