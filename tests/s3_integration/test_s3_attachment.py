@@ -27,12 +27,6 @@ import time
 import boto3
 import pytest
 from botocore.exceptions import ClientError
-from moto import mock_aws  # noqa: F401 — imported for Moto interception reference
-
-# ---------------------------------------------------------------------------
-# Internal imports — class under test (type context only)
-# ---------------------------------------------------------------------------
-from odoo.addons.base.models.ir_attachment import IrAttachment  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Constants shared across tests
