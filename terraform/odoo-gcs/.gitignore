@@ -1,0 +1,30 @@
+# Terraform state files — contain sensitive data (e.g., service account private
+# keys) after `terraform apply`.  Never commit state to version control.
+*.tfstate
+*.tfstate.backup
+
+# Terraform provider plugins and internal metadata — downloaded by `terraform
+# init` and are platform-specific binaries that must not be committed.
+.terraform/
+
+# Override files — used for local-only provider or variable overrides that
+# should not be shared across the team.
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform crash log produced on fatal provider or core errors.
+crash.log
+
+# Credential and key artifacts that may be generated from Terraform outputs
+# or placed locally for provider authentication.  These must never be committed.
+sa-key.json
+*credentials*.json
+*.pem
+*.key
+
+# Re-include the provider lock file so that it CAN be committed.  HashiCorp
+# recommends committing .terraform.lock.hcl for reproducible provider installs.
+# The root .gitignore `.*` pattern would otherwise exclude this file.
+!.terraform.lock.hcl
