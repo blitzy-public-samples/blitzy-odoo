@@ -7,6 +7,8 @@ import hashlib
 import logging
 import mimetypes
 import os
+import boto3  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+from botocore.exceptions import ClientError  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
 import psycopg2
 import re
 import uuid
@@ -131,35 +133,67 @@ class IrAttachment(models.Model):
         return fname, full_path
 
     @api.model
+    def _get_s3_client(self):  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        """Return a fresh boto3 S3 client. Instantiated per-call so that
+        Moto's mock_aws context can intercept every request."""
+        # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        return boto3.client('s3',
+            endpoint_url=os.environ.get('AWS_ENDPOINT_URL'),
+            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID', 'test'),
+            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY', 'test'),
+            region_name=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'))
+
+    @api.model
     def _file_read(self, fname, size=None):
         assert isinstance(self, IrAttachment)
-        full_path = self._full_path(fname)
-        try:
-            with open(full_path, 'rb') as f:
-                return f.read(size)
-        except OSError:
-            _logger.info("_read_file reading %s", full_path, exc_info=True)
-        return b''
+        if os.environ.get('IR_ATTACHMENT_STORAGE') == 's3':  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            try:  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+                bucket = os.environ.get('AWS_S3_BUCKET', 'odoo-attachments')  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+                response = self._get_s3_client().get_object(Bucket=bucket, Key=fname)  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+                data = response['Body'].read()  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+                return data[:size] if size else data  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            except ClientError:  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+                _logger.info("_file_read reading S3 key %s", fname, exc_info=True)  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            return b''  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        else:
+            full_path = self._full_path(fname)
+            try:
+                with open(full_path, 'rb') as f:
+                    return f.read(size)
+            except OSError:
+                _logger.info("_read_file reading %s", full_path, exc_info=True)
+            return b''
 
     @api.model
     def _file_write(self, bin_value, checksum):
         assert isinstance(self, IrAttachment)
-        fname, full_path = self._get_path(bin_value, checksum)
-        if not os.path.exists(full_path):
-            try:
-                with open(full_path, 'wb') as fp:
-                    fp.write(bin_value)
-                # add fname to checklist, in case the transaction aborts
-                self._mark_for_gc(fname)
-            except OSError:
-                _logger.info("_file_write writing %s", full_path)
-                raise
-        return fname
+        if os.environ.get('IR_ATTACHMENT_STORAGE') == 's3':  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            bucket = os.environ.get('AWS_S3_BUCKET', 'odoo-attachments')  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            key = f"{checksum[:2]}/{checksum}"  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            self._get_s3_client().put_object(Bucket=bucket, Key=key, Body=bin_value)  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            return key  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        else:
+            fname, full_path = self._get_path(bin_value, checksum)
+            if not os.path.exists(full_path):
+                try:
+                    with open(full_path, 'wb') as fp:
+                        fp.write(bin_value)
+                    # add fname to checklist, in case the transaction aborts
+                    self._mark_for_gc(fname)
+                except OSError:
+                    _logger.info("_file_write writing %s", full_path)
+                    raise
+            return fname
 
     @api.model
     def _file_delete(self, fname):
-        # simply add fname to checklist, it will be garbage-collected later
-        self._mark_for_gc(fname)
+        if os.environ.get('IR_ATTACHMENT_STORAGE') == 's3':  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            bucket = os.environ.get('AWS_S3_BUCKET', 'odoo-attachments')  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            self._get_s3_client().delete_object(Bucket=bucket, Key=fname)  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+            return  # S3 storage backend — see IR_ATTACHMENT_STORAGE env var.
+        else:
+            # simply add fname to checklist, it will be garbage-collected later
+            self._mark_for_gc(fname)
 
     def _mark_for_gc(self, fname):
         """ Add ``fname`` in a checklist for the filestore garbage collection. """
