@@ -96,3 +96,9 @@ xlwt==1.3.0
 zeep==4.1.0 ; python_version < '3.11'  # (jammy)
 zeep==4.2.1 ; python_version >= '3.11' and python_version < '3.13'
 zeep==4.3.1 ; python_version >= '3.13'
+# S3 storage backend dependencies
+boto3>=1.34.0
+moto[s3]>=5.0.0
+# Test execution
+pytest>=8.0
+pytest-odoo

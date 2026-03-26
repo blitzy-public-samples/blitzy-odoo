@@ -1,0 +1,47 @@
+# Docker Compose convenience stack for Odoo 19 local development.
+# This file is OPTIONAL — it provides a quick way to spin up PostgreSQL + Odoo.
+# S3 mocking for tests is handled entirely in-process by Moto; no S3/LocalStack
+# container is needed.  See tests/s3_integration/conftest.py for details.
+#
+# Usage:
+#   docker compose up -d
+#   Open http://localhost:8069 in your browser.
+
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_DB=odoo
+      - POSTGRES_USER=odoo
+      - POSTGRES_PASSWORD=odoo
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  web:
+    image: odoo:19.0
+    depends_on:
+      - db
+    ports:
+      - "8069:8069"
+    environment:
+      - HOST=db
+      - USER=odoo
+      - PASSWORD=odoo
+      # S3 storage backend configuration (optional).
+      # Uncomment the lines below to route ir.attachment file storage to S3.
+      # See .env.example for a full description of each variable.
+      # - IR_ATTACHMENT_STORAGE=s3
+      # - AWS_S3_BUCKET=odoo-attachments
+      # - AWS_ACCESS_KEY_ID=test
+      # - AWS_SECRET_ACCESS_KEY=test
+      # - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - ./odoo:/mnt/extra-addons
+      - ./addons:/mnt/addons
+
+volumes:
+  db-data:
