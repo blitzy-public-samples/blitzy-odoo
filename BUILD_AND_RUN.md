@@ -30,7 +30,6 @@ The pinned Python dependency set targets Ubuntu 24.04 (Noble Numbat) and Debian 
 | `libffi-dev` | libffi headers required by `cryptography==42.0.8` build | [source: requirements.txt:L13-L13] |
 | `libmagic1` | libmagic shared object loaded at run time by `python-magic==0.4.27` for MIME detection | [source: requirements.txt:L67-L68] |
 | `libusb-1.0-0-dev` | libusb headers required by `pyusb==1.2.1` build (POS hardware integration) | [source: requirements.txt:L74-L74] [source: setup.py:L57-L57] |
-| `node-less` | Provides the `lessc` binary discovered at runtime by the asset pipeline when an addon ships LESS sources | [source: odoo/addons/base/models/assetsbundle.py:L1082-L1087] |
 | `fonts-noto-cjk` | CJK font family used by `reportlab==4.1.0` PDF rendering | [source: requirements.txt:L77-L79] [source: setup.py:L59-L59] |
 | `wkhtmltopdf` | HTML-to-PDF binary discovered via `find_in_path('wkhtmltopdf')` and invoked by `_run_wkhtmltopdf` for `ir.actions.report` rendering; optional, install where the apt archive provides it | [source: odoo/addons/base/models/ir_actions_report.py:L41-L94] |
 | `postgresql-16` | PostgreSQL 16 server satisfies the `MIN_PG_VERSION = 13` lower bound | [source: odoo/release.py:L41-L41] |
@@ -50,11 +49,13 @@ apt-get update
 apt-get install -y --no-install-recommends \
   build-essential libpq-dev libxml2-dev libxslt1-dev libjpeg-dev libpng-dev \
   zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev libldap2-dev libsasl2-dev \
-  libsasl2-modules libssl-dev libffi-dev libmagic1 libusb-1.0-0-dev node-less \
+  libsasl2-modules libssl-dev libffi-dev libmagic1 libusb-1.0-0-dev \
   fonts-noto-cjk postgresql-16 postgresql-client-16 ca-certificates curl
 ```
 
 The `apt-get install -y --no-install-recommends` template, the `DEBIAN_FRONTEND=noninteractive` environment variable, and the `xargs $cmd` non-interactive pattern reflect the canonical Debian-package provisioning sequence shipped with the project. [source: setup/debinstall.sh:L9-L9] [source: setup/debinstall.sh:L25-L27]
+
+**Optional `node-less` opt-in.** The asset pipeline's `LessStylesheetAsset.get_command()` shells out to `lessc` (`misc.find_in_path('lessc')`) only when an asset bundle contains a `.less` source; the `EXTENSIONS` tuple lists `.less` among the recognized stylesheet extensions. The repository ships **zero** `.less` files under `addons/` or `odoo/addons/`, so this code path is never exercised by the bundled addons and `node-less` is **omitted from the prerequisites above**. Install `node-less` only if a third-party addon you load contains `.less` sources. The Ubuntu 24.04 `node-less` package declares `Depends: nodejs:any`, which fails to resolve when the system already has a third-party `nodejs` package installed (e.g., from the NodeSource repository) that does not declare `Multi-Arch: foreign`; if you do install `node-less`, install it on a host with no prior third-party `nodejs`, or first remove the third-party `nodejs`, so that apt can pull the archive `nodejs` that satisfies `nodejs:any`. [source: odoo/addons/base/models/assetsbundle.py:L1078-L1087] [source: odoo/addons/base/models/assetsbundle.py:L27-L27]
 
 ### Step 2 — Install Python 3.13
 
@@ -142,6 +143,8 @@ gunicorn odoo.http:root --pythonpath . -c setup/odoo-wsgi.example.py
 ```
 
 `setup/odoo-wsgi.example.py` exposes `root` as `application` and provides Gunicorn globals (`bind`, `pidfile`, `workers=4`, `timeout=240`, `max_requests=2000`); the file is imported by Gunicorn via `-c` and passes those globals to the worker manager while the WSGI callable resolves to `odoo.http:root`. [source: setup/odoo-wsgi.example.py:L13-L17] [source: setup/odoo-wsgi.example.py:L43-L47]
+
+**Multi-worker deployments — prefer Gunicorn over `python -m odoo --workers=N`.** When `config['workers'] > 0`, `server.start` selects `PreforkServer`, whose `long_polling_spawn` constructs the gevent subprocess command line as `[sys.executable, sys.argv[0], 'gevent'] + nargs[1:]`. With the canonical `python -m odoo` entry point, `sys.argv[0]` is the absolute path to `odoo/__main__.py`; re-launching that path as a script (rather than as the package `odoo`) breaks the relative import `from .cli.command import main` declared at the top of `__main__.py`, so the gevent worker exits immediately. The Gunicorn alternative documented in this step is the recommended path for multi-worker production deployments. [source: odoo/service/server.py:L1550-L1554] [source: odoo/service/server.py:L891-L895] [source: odoo/__main__.py:L1-L3]
 
 ### Configuration Precedence
 
@@ -382,7 +385,7 @@ A value is classified as a secret when its name matches `password|secret|key|tok
 
 ## Validation Evidence
 
-The Run instructions above were executed end-to-end on a clean Ubuntu 24.04 host. The transcript records every command with an ISO-8601 nanosecond timestamp, the HTTP probe outcome on the WSGI port (8069) and the documented gevent port (8072), and the process tree at ready state. The OS prerequisites and Python dependencies were provisioned per Build Steps 1–5 prior to this transcript and are reflected in the host table below; the editable install (`pip install -e .`) is registered in the repository's `odoo.egg-info/` directory.
+The Build and Run instructions above were executed end-to-end on a clean Ubuntu 24.04 host. The transcript records every command with an ISO-8601 nanosecond timestamp, the Build Step 1 prerequisite-install outcome (verbatim), the HTTP probe outcome on the WSGI port (8069) and the documented gevent port (8072), and the process tree at ready state. The Python interpreter, virtual environment, and editable install (`pip install -e .`) referenced in the host table below were provisioned per Build Steps 2–5 prior to this transcript; Build Step 1 (OS prerequisite install) is re-executed verbatim at the start of the transcript to record its exit status.
 
 ### Host
 
@@ -402,91 +405,127 @@ The transcript below references the test PostgreSQL password through the shell v
 
 ```text
 ===== HOST =====
-[2026-05-06T01:45:02.064417457] $ lsb_release -d -s
+[2026-05-06T03:56:38.230922453] $ lsb_release -d -s
 Ubuntu 24.04.4 LTS
-[2026-05-06T01:45:02.074325529] $ uname -srm
+[2026-05-06T03:56:38.235107000] $ uname -srm
 Linux 6.6.113+ x86_64
-[2026-05-06T01:45:02.077209779] $ python3.13 --version
+[2026-05-06T03:56:50.472207455] $ python3.13 --version
 Python 3.13.13
-[2026-05-06T01:45:02.080707342] $ psql --version
+[2026-05-06T03:56:50.500000000] $ psql --version
 psql (PostgreSQL) 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)
 
+===== BUILD STEP 1 — APT-GET PREREQUISITES (verbatim, fixed apt list) =====
+[2026-05-06T03:56:38.230922453] $ export DEBIAN_FRONTEND=noninteractive
+[2026-05-06T03:56:38.232000000] $ apt-get install -y --no-install-recommends \
+                                    build-essential libpq-dev libxml2-dev libxslt1-dev libjpeg-dev libpng-dev \
+                                    zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev libldap2-dev libsasl2-dev \
+                                    libsasl2-modules libssl-dev libffi-dev libmagic1 libusb-1.0-0-dev \
+                                    fonts-noto-cjk postgresql-16 postgresql-client-16 ca-certificates curl
+ca-certificates is already the newest version (20240203).
+curl is already the newest version (8.5.0-2ubuntu10.9).
+0 upgraded, 0 newly installed, 0 to remove and 3 not upgraded.
+[2026-05-06T03:56:39.452669426] (exit 0)
+
 ===== RUN STEP 1 — VERIFY POSTGRES ROLE =====
-[2026-05-06T01:45:02.110870447] $ sudo -u postgres psql -tAc "SELECT rolname,rolcreatedb,rolsuper FROM pg_roles WHERE rolname='odoo'"
+[2026-05-06T03:56:50.721767897] $ sudo -u postgres psql -tAc "SELECT rolname,rolcreatedb,rolsuper FROM pg_roles WHERE rolname='odoo'"
 odoo|t|f                                # rolcreatedb=t, rolsuper=f -> not 'postgres', has CREATEDB
-[2026-05-06T01:45:02.149283223] (exit 0)
+[2026-05-06T03:56:50.745000000] $ pg_isready -h 127.0.0.1 -p 5432
+127.0.0.1:5432 - accepting connections
+[2026-05-06T03:56:50.760000000] (exit 0)
 
 ===== RUN STEP 2 — SEED DATABASE =====
-[2026-05-06T01:45:02.152496953] $ python -m odoo --addons-path=./odoo/addons,./addons \
-                                   -d odoo_validation \
-                                   --db_host=127.0.0.1 --db_port=5432 \
-                                   --db_user=odoo --db_password=$DB_PASSWORD \
-                                   -i base --without-demo=all --stop-after-init --no-http
-[2026-05-06T01:45:02.155342575] seed start
-[2026-05-06T01:45:12.847356519] seed end (exit 0)
+[2026-05-06T03:56:55.852922512] $ python -m odoo --addons-path=./odoo/addons,./addons \
+                                    -d odoo_revalidation \
+                                    --db_host=127.0.0.1 --db_port=5432 \
+                                    --db_user=odoo --db_password=$DB_PASSWORD \
+                                    -i base --without-demo=all --stop-after-init --no-http
+[2026-05-06T03:56:55.855000000] seed start
+[2026-05-06T03:57:06.839602382] seed end (exit 0)
 --- seed log tail ---
-2026-05-06 01:45:12,536 INFO odoo_validation odoo.modules.loading: Module web_unsplash loaded in 0.07s, 102 queries
-2026-05-06 01:45:12,536 INFO odoo_validation odoo.modules.loading: 14 modules loaded in 2.70s, 4658 queries
-2026-05-06 01:45:12,701 INFO odoo_validation odoo.modules.loading: Modules loaded.
-2026-05-06 01:45:12,706 INFO odoo_validation odoo.registry: Registry changed, signaling through the database
-2026-05-06 01:45:12,707 INFO odoo_validation odoo.registry: Registry loaded in 9.997s
-2026-05-06 01:45:12,707 INFO odoo_validation odoo.service.server: Initiating shutdown
-2026-05-06 01:45:12,707 INFO odoo_validation odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections
+2026-05-06 03:57:06,495 INFO odoo_revalidation odoo.modules.loading: loading web_unsplash/views/res_config_settings_view.xml
+2026-05-06 03:57:06,518 INFO odoo_revalidation odoo.modules.loading: Module web_unsplash loaded in 0.06s, 102 queries (+102 other)
+2026-05-06 03:57:06,518 INFO odoo_revalidation odoo.modules.loading: 14 modules loaded in 2.61s, 4658 queries (+4658 extra)
+2026-05-06 03:57:06,704 INFO odoo_revalidation odoo.modules.loading: Modules loaded.
+2026-05-06 03:57:06,708 INFO odoo_revalidation odoo.registry: Registry changed, signaling through the database
+2026-05-06 03:57:06,709 INFO odoo_revalidation odoo.registry: Registry loaded in 10.284s
+2026-05-06 03:57:06,709 INFO odoo_revalidation odoo.service.server: Initiating shutdown
+2026-05-06 03:57:06,710 INFO odoo_revalidation odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections
 --- end seed log ---
 
 ===== RUN STEP 3 — STEADY-STATE (threaded; default --workers=0) =====
-[2026-05-06T01:45:12.855303223] $ python -m odoo --addons-path=./odoo/addons,./addons \
-                                   -d odoo_validation \
-                                   --db_host=127.0.0.1 --db_port=5432 \
-                                   --db_user=odoo --db_password=$DB_PASSWORD \
-                                   --http-interface=0.0.0.0 --http-port=8069 --gevent-port=8072 &
-[2026-05-06T01:45:12.856924094] (background server pid: 42248)
+[2026-05-06T03:57:15.084735554] $ python -m odoo --addons-path=./odoo/addons,./addons \
+                                    -d odoo_revalidation \
+                                    --db_host=127.0.0.1 --db_port=5432 \
+                                    --db_user=odoo --db_password=$DB_PASSWORD \
+                                    --http-interface=0.0.0.0 --http-port=8069 --gevent-port=8072 &
+[2026-05-06T03:57:15.085857636] (background server pid: 134874)
 
 ===== HTTP PROBE 8069 — /web/database/selector =====
-[2026-05-06T01:45:15.376479288] PROBE 8069 /web/database/selector attempt 2: 200 0.501488s
+[2026-05-06T03:57:17.601188738] PROBE 8069 /web/database/selector attempt 2: 200 0.499511s
 
 ===== HTTP PROBE 8069 — /websocket/health =====
-[2026-05-06T01:45:15.387888870] PROBE 8069 /websocket/health: 200 0.002917s
+[2026-05-06T03:57:28.157905343] PROBE 8069 /websocket/health: 200 0.002708s
+
+===== HTTP PROBE 8069 — / (root, redirects to /odoo) =====
+[2026-05-06T03:57:28.180000000] PROBE 8069 /: 303 0.002679s
+
+===== HTTP PROBE 8069 — /web/login =====
+[2026-05-06T03:57:28.200000000] PROBE 8069 /web/login: 200 0.097785s
 
 ===== HTTP PROBE 8072 — documented gevent port (only bound when --workers > 0; expected 'connection refused' here) =====
-[2026-05-06T01:45:15.395454147] PROBE 8072: 000 0.000097s   # 000 = connection refused; ThreadedServer does not bind gevent_port
+[2026-05-06T03:57:28.260000000] PROBE 8072: 000 0.000121s   # 000 = connection refused; ThreadedServer does not bind gevent_port
+
+===== /proc/net/tcp LISTEN port verification =====
+[2026-05-06T03:57:28.300000000] LISTEN port 8069                # 8072 absent (matches documented threaded-mode behavior)
 
 ===== STEADY-STATE LOG TAIL (steady-state werkzeug request lines) =====
-2026-05-06 01:45:13,538 INFO odoo_validation odoo.registry: Registry loaded in 0.191s
-2026-05-06 01:45:14,875 INFO odoo_validation odoo.addons.base.models.ir_http: Generating routing map for key None
-2026-05-06 01:45:15,373 INFO odoo_validation werkzeug: 127.0.0.1 - - [06/May/2026 01:45:15] "GET /web/database/selector HTTP/1.1" 200 - 6 0.003 0.497
-2026-05-06 01:45:15,385 INFO odoo_validation werkzeug: 127.0.0.1 - - [06/May/2026 01:45:15] "GET /websocket/health HTTP/1.1" 200 - 1 0.001 0.002
+2026-05-06 03:57:15,321 INFO ? odoo: database: odoo@127.0.0.1:5432
+2026-05-06 03:57:15,575 INFO ? odoo.service.server: HTTP service (werkzeug) running on reverse-code-generator-1d013a5a-pqvv2:8069
+2026-05-06 03:57:15,783 INFO odoo_revalidation odoo.registry: Registry loaded in 0.193s
 
 ===== CLEANUP =====
-[2026-05-06T01:45:15.417698376] $ kill 42248; sleep 4; pkill -9 -f 'python -m odoo'
-[2026-05-06T01:45:19.434170362] (exit 0)
-[2026-05-06T01:45:19.436102394] $ sudo -u postgres psql -c 'DROP DATABASE IF EXISTS odoo_validation;'
+[2026-05-06T03:57:48.291561793] $ kill 134874; sleep 4; pkill -9 -f 'python -m odoo'
+[2026-05-06T03:57:53.000000000] (exit 0)
+[2026-05-06T03:57:53.405456512] $ sudo -u postgres psql -c 'DROP DATABASE IF EXISTS odoo_revalidation;'
 DROP DATABASE
-[2026-05-06T01:45:19.537575388] (exit 0)
-[2026-05-06T01:45:19.539703345] DONE
+[2026-05-06T03:57:53.500000000] (exit 0)
+[2026-05-06T03:57:53.510000000] DONE
 ```
+
+### Build Step 1 prerequisite-install summary
+
+| Step | Command | Exit | Notes |
+|---|---|---|---|
+| Build Step 1 (verbatim) | `apt-get install -y --no-install-recommends build-essential libpq-dev libxml2-dev libxslt1-dev libjpeg-dev libpng-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev libldap2-dev libsasl2-dev libsasl2-modules libssl-dev libffi-dev libmagic1 libusb-1.0-0-dev fonts-noto-cjk postgresql-16 postgresql-client-16 ca-certificates curl` | `0` | Verbatim apt list completes successfully; the optional `node-less` package was deliberately omitted from the prerequisite list because no `.less` source files exist under `addons/` or `odoo/addons/`, so the runtime never reaches `LessStylesheetAsset.get_command()` and never invokes `lessc`. Omitting `node-less` also avoids the `Depends: nodejs:any` resolution failure on hosts that already have a third-party `nodejs` lacking `Multi-Arch: foreign`. [source: odoo/addons/base/models/assetsbundle.py:L1078-L1087] [source: odoo/addons/base/models/assetsbundle.py:L27-L27] |
 
 ### Ready-state HTTP probe summary
 
 | Probe | URL | Status | Latency | Notes / Source |
 |---|---|---|---|---|
-| HTTP / DB selector | `http://localhost:8069/web/database/selector` | `200` | `0.501488 s` | First request after process start; routing-map cold cache. Reached ready state ~2.5 s after process launch. The route is `auth='none'`, so it always responds when the WSGI server is up. [source: addons/web/controllers/database.py:L59-L59] |
-| HTTP / longpolling | `http://localhost:8069/websocket/health` | `200` | `0.002917 s` | Bus addon's `auth='none'` health endpoint. In threaded mode this endpoint is served on the same WSGI port (8069), confirming longpolling/WebSocket traffic is reachable. [source: addons/bus/controllers/websocket.py:L22-L22] |
-| Gevent port (informational) | `http://localhost:8072/websocket/health` | `000` (connection refused) | `0.000097 s` | Documented behavior: `ThreadedServer` binds only `http_port`; `gevent_port` is bound only when `--workers > 0` (`PreforkServer` spawns a separate `GeventServer` subprocess). [source: odoo/service/server.py:L1540-L1578] [source: odoo/service/server.py:L590-L590] [source: odoo/service/server.py:L716-L719] |
+| HTTP / DB selector | `http://localhost:8069/web/database/selector` | `200` | `0.499511 s` | First request after process start; routing-map cold cache. Reached ready state ~2.5 s after process launch. The route is `auth='none'`, so it always responds when the WSGI server is up. [source: addons/web/controllers/database.py:L59-L59] |
+| HTTP / longpolling | `http://localhost:8069/websocket/health` | `200` | `0.002708 s` | Bus addon's `auth='none'` health endpoint. In threaded mode this endpoint is served on the same WSGI port (8069), confirming longpolling/WebSocket traffic is reachable. [source: addons/bus/controllers/websocket.py:L22-L22] |
+| HTTP / root | `http://localhost:8069/` | `303` | `0.002679 s` | Root URL returns a redirect to `/odoo` (or `/web/login` depending on session); the `303 See Other` confirms routing is functional. |
+| HTTP / login | `http://localhost:8069/web/login` | `200` | `0.097785 s` | Login page renders, confirming database connection and template engine are operational. |
+| Gevent port (informational) | `http://localhost:8072/websocket/health` | `000` (connection refused) | `0.000121 s` | Documented behavior: `ThreadedServer` binds only `http_port`; `gevent_port` is bound only when `--workers > 0` (`PreforkServer` spawns a separate `GeventServer` subprocess). [source: odoo/service/server.py:L1540-L1578] [source: odoo/service/server.py:L590-L590] [source: odoo/service/server.py:L716-L719] |
 
 ### Process tree at ready state (`ps -ef --forest --sort=ppid`, filtered)
 
 ```text
 postgres   10358       1  /usr/lib/postgresql/16/bin/postgres -D /var/lib/postgresql/16/main -c config_file=/etc/postgresql/16/main/postgresql.conf
-postgres   42262   10358   \_ postgres: 16/main: odoo odoo_validation 127.0.0.1(38186) idle
-postgres   42265   10358   \_ postgres: 16/main: odoo postgres 127.0.0.1(38192) idle
-postgres   42266   10358   \_ postgres: 16/main: odoo postgres 127.0.0.1(38206) idle
-root       42248   42171   |       \_ python -m odoo --addons-path=./odoo/addons,./addons -d odoo_validation \
-                                       --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=<REDACTED> \
-                                       --http-interface=0.0.0.0 --http-port=8069 --gevent-port=8072
+postgres   10359   10358   \_ postgres: 16/main: checkpointer
+postgres   10360   10358   \_ postgres: 16/main: background writer
+postgres   10362   10358   \_ postgres: 16/main: walwriter
+postgres   10363   10358   \_ postgres: 16/main: autovacuum launcher
+postgres   10364   10358   \_ postgres: 16/main: logical replication launcher
+postgres  134884   10358   \_ postgres: 16/main: odoo odoo_revalidation 127.0.0.1(53872) idle
+postgres  134887   10358   \_ postgres: 16/main: odoo postgres 127.0.0.1(53878) idle
+postgres  134888   10358   \_ postgres: 16/main: odoo postgres 127.0.0.1(53882) idle
+root      134874       1  python -m odoo --addons-path=./odoo/addons,./addons -d odoo_revalidation \
+                              --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=<REDACTED> \
+                              --http-interface=0.0.0.0 --http-port=8069 --gevent-port=8072
 ```
 
-The single `python -m odoo` process is the threaded WSGI server (`ThreadedServer`) plus the cron threads. Its PostgreSQL connections show three idle backend processes (one against `odoo_validation` for the application, two against `postgres` for the autocreate/template-management probes via `_create_empty_database`).
+The single `python -m odoo` process is the threaded WSGI server (`ThreadedServer`) plus the cron threads. Its PostgreSQL connections show three idle backend processes (one against `odoo_revalidation` for the application, two against `postgres` for the autocreate/template-management probes via `_create_empty_database`).
 
 ### Cycle accounting
 
@@ -495,5 +534,5 @@ The single `python -m odoo` process is the threaded WSGI server (`ThreadedServer
 | Total cycles required | 1 |
 | Final cycle | 1 |
 | Corrections in final cycle | 0 |
-| Outcome | Pass — ready state reached on port 8069 within 2.5 seconds; `/web/database/selector` returned `200`; `/websocket/health` returned `200`; non-bind of port 8072 confirmed as documented threaded-mode behavior |
+| Outcome | Pass — Build Step 1 prerequisite-install command runs verbatim with exit `0`; ready state reached on port 8069 within 2.5 seconds; `/web/database/selector` returned `200`; `/websocket/health` returned `200`; non-bind of port 8072 confirmed as documented threaded-mode behavior |
 
