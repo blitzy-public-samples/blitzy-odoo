@@ -36,7 +36,7 @@ The pinned Python dependency set targets Ubuntu 24.04 (Noble Numbat) and Debian 
 | `postgresql-16` | PostgreSQL 16 server satisfies the `MIN_PG_VERSION = 13` lower bound | [source: odoo/release.py:L41-L41] |
 | `postgresql-client-16` | Provides the `psql`, `pg_dump`, and `pg_restore` binaries discovered by the database service via `find_pg_tool` | [source: odoo/service/db.py:L285-L286] [source: odoo/service/db.py:L352-L362] |
 | `ca-certificates` | TLS root certificates required by the `requests==2.31.0` HTTP client used in outbound integrations | [source: requirements.txt:L80-L81] [source: setup.py:L61-L61] |
-| `curl` | Used by the validation HTTP probe in `## Validation Evidence` | [source: setup/debinstall.sh:L9-L9] |
+| `curl` | Validation HTTP probe tooling used in `## Validation Evidence`; not part of the Odoo runtime | (validation tooling — not source-derived) |
 
 ---
 
@@ -83,7 +83,7 @@ pip install --no-input --upgrade pip wheel setuptools
 pip install --no-input -r requirements.txt
 ```
 
-`requirements.txt` pins one version per package per Python interpreter and per platform, so pip resolves a single, deterministic dependency graph for Python 3.13 on `sys_platform != 'win32'`. [source: requirements.txt:L1-L99]
+`requirements.txt` pins one version per package per Python interpreter and per platform, so pip resolves a single, deterministic dependency graph for Python 3.13 on `sys_platform != 'win32'`. [source: requirements.txt:L1-L98]
 
 ### Step 5 — Install the Odoo package itself (editable)
 
@@ -115,10 +115,10 @@ python -m odoo \
   -d odoo_db \
   --db_host=127.0.0.1 --db_port=5432 \
   --db_user=odoo --db_password=CHANGE_ME \
-  -i base --without-demo=all --stop-after-init
+  -i base --without-demo=all --stop-after-init --no-http
 ```
 
-The first invocation seeds the database. `_create_empty_database` only creates an empty PostgreSQL database; the `base` module must be installed before the application is functional, so `-i base` is supplied. `--stop-after-init` causes `server.start(..., stop=config["stop_after_init"])` to return after the preload phase, exiting the process cleanly so a steady-state run can follow. `--without-demo=all` suppresses demo-data fixtures so the seeded database is production-shaped. [source: odoo/__main__.py:L1-L3] [source: odoo/cli/command.py:L127-L129] [source: odoo/cli/server.py:L101-L119] [source: odoo/tools/config.py:L235-L236] [source: odoo/tools/config.py:L429-L430]
+The first invocation seeds the database. `_create_empty_database` only creates an empty PostgreSQL database; the `base` module must be installed before the application is functional, so `-i base` is supplied. `--stop-after-init` causes `server.start(..., stop=config["stop_after_init"])` to return after the preload phase, exiting the process cleanly so a steady-state run can follow. `--without-demo=all` suppresses demo-data fixtures so the seeded database is production-shaped. `--no-http` (`http_enable=False`) skips HTTP listener startup during seeding because the seed phase is a one-shot batch with `--stop-after-init`; this matches the seeding command executed in `## Validation Evidence`. [source: odoo/__main__.py:L1-L3] [source: odoo/cli/command.py:L127-L129] [source: odoo/cli/server.py:L101-L119] [source: odoo/tools/config.py:L235-L236] [source: odoo/tools/config.py:L261-L262] [source: odoo/tools/config.py:L429-L430]
 
 ### Step 3 — Steady-state run
 
@@ -310,6 +310,8 @@ This section enumerates every environment variable consumed by the server. Varia
 | `ODOO_TEST_MAX_FAILED_TESTS` | `sys.maxsize` | No (test-only) | Cap on the number of failing tests before the test runner aborts | [source: odoo/tests/result.py:L23-L23] |
 | `ODOO_TOUR_DELAY_TO_CHECK_UNDETERMINISMS` | `0` | No (test-only) | Inter-step delay (seconds) used by browser-tour tests to detect UI race conditions | [source: odoo/tests/common.py:L2469-L2469] |
 | `ODOO_BROWSER_CPU_THROTTLING` | unset | No (test-only) | Forces CPU throttling on the Chrome DevTools test browser; used by runbot infrastructure | [source: odoo/tests/common.py:L2429-L2429] |
+| `ODOO_RUNBOT` | unset | No (test-only) | When set, signals execution inside the Odoo runbot CI environment; gates SMTP-test prerequisite checks for `openssl` and `aiosmtpd` | [source: odoo/addons/base/tests/test_ir_mail_server_smtpd.py:L34-L36] |
+| `WEB_SERVER_URL` | `'http://localhost:80'` | No (test-only) | Base URL for the `test_http` web-server test suite; overrides the default localhost target when running tests against a non-default web server | [source: odoo/addons/test_http/tests/test_web_server.py:L10-L10] |
 | `ADDONS_PATH` | unset | No (test-only) | Read by `_pylint_path_setup` to seed the pylint sandbox; only consumed by the lint test harness | [source: odoo/addons/test_lint/tests/_pylint_path_setup.py:L26-L26] |
 | `PATH` | inherited | No | Standard Unix `PATH`; used to discover `psql`, `pg_dump`, `pg_restore`, `wkhtmltopdf`, `lessc`, and `sass` via `find_in_path` | [source: odoo/tools/misc.py:L143-L143] |
 | `PYTHONPATH` | inherited | No | Standard Python module-search path; the lint test harness extends it before spawning a sub-interpreter | [source: odoo/addons/test_lint/tests/test_checkers.py:L64-L64] |
@@ -348,13 +350,13 @@ A value is classified as a secret when its name matches `password|secret|key|tok
 | Secret | Consumption Point | Expected Format | Default Override Required | Hardcoded-Default Finding |
 |---|---|---|---|---|
 | `admin_passwd` (config-file only) | `odoo/tools/config.py:L207`; verified via `crypt_context` (`pbkdf2_sha512`) when the database manager is invoked | A `passlib`-managed hash string (the parser auto-upgrades a plaintext value to `pbkdf2_sha512` on first verify) | **YES** | **⚠️ SECURITY FINDING: hardcoded default — MUST be overridden in production via the configuration file `[options] admin_passwd = …` or via secret-management injection. The literal default is intentionally not reproduced here.** [source: odoo/tools/config.py:L207-L207] [source: odoo/tools/config.py:L21-L23] [source: odoo/tools/config.py:L1019-L1030] |
-| `db_password` / `PGPASSWORD` | `odoo/tools/config.py:L371-L372`; consumed by `connection_info_for` / `db_connect` in `odoo/sql_db.py` | PostgreSQL password string | Conditional — required only when the PostgreSQL host expects password authentication; not required for `trust` or peer/local-socket auth | No (default is empty string) | [source: odoo/tools/config.py:L371-L372] [source: odoo/sql_db.py:L793-L798] |
-| `smtp_password` / `ODOO_SMTP_PASSWORD` | `odoo/tools/config.py:L357-L358` | Plain SMTP password | Conditional — required only when SMTP relay enforces authentication | No (default is empty string) | [source: odoo/tools/config.py:L357-L358] |
-| `smtp_ssl_certificate_filename` / `ODOO_SMTP_SSL_CERTIFICATE_FILENAME` | `odoo/tools/config.py:L359-L360` | Filesystem path to a PEM-encoded client certificate | Conditional — required only when client-cert SMTP auth is configured | No (default is empty string) | [source: odoo/tools/config.py:L359-L360] |
-| `smtp_ssl_private_key_filename` / `ODOO_SMTP_SSL_PRIVATE_KEY_FILENAME` | `odoo/tools/config.py:L361-L362` | Filesystem path to a PEM-encoded private key | Conditional — required only when client-cert SMTP auth is configured | No (default is empty string) | [source: odoo/tools/config.py:L361-L362] |
-| `proxy_access_token` (config-file only) | `odoo/tools/config.py:L214` | Opaque bearer token | Conditional — required only when Odoo's proxy access feature is in use | No (default is empty string) | [source: odoo/tools/config.py:L214-L214] |
-| `GPGPASSPHRASE` (build-time only) | `setup/package.py:L33` and `setup/package.py:L147,L158` (Debian/RPM signing) | GPG key passphrase | Yes when producing signed distribution packages | No | [source: setup/package.py:L33-L33] [source: setup/package.py:L147-L147] [source: setup/package.py:L158-L158] |
-| `GPGID` (build-time only) | `setup/package.py:L34` and `setup/package.py:L147` (Debian signing) | GPG key identifier | Yes when producing signed distribution packages | No | [source: setup/package.py:L33-L34] [source: setup/package.py:L147-L147] |
+| `db_password` / `PGPASSWORD` | `odoo/tools/config.py:L371-L372`; consumed by `connection_info_for` / `db_connect` in `odoo/sql_db.py` | PostgreSQL password string | Conditional — required only when the PostgreSQL host expects password authentication; not required for `trust` or peer/local-socket auth | No (default is empty string). [source: odoo/tools/config.py:L371-L372] [source: odoo/sql_db.py:L793-L798] |
+| `smtp_password` / `ODOO_SMTP_PASSWORD` | `odoo/tools/config.py:L357-L358` | Plain SMTP password | Conditional — required only when SMTP relay enforces authentication | No (default is empty string). [source: odoo/tools/config.py:L357-L358] |
+| `smtp_ssl_certificate_filename` / `ODOO_SMTP_SSL_CERTIFICATE_FILENAME` | `odoo/tools/config.py:L359-L360` | Filesystem path to a PEM-encoded client certificate | Conditional — required only when client-cert SMTP auth is configured | No (default is empty string). [source: odoo/tools/config.py:L359-L360] |
+| `smtp_ssl_private_key_filename` / `ODOO_SMTP_SSL_PRIVATE_KEY_FILENAME` | `odoo/tools/config.py:L361-L362` | Filesystem path to a PEM-encoded private key | Conditional — required only when client-cert SMTP auth is configured | No (default is empty string). [source: odoo/tools/config.py:L361-L362] |
+| `proxy_access_token` (config-file only) | `odoo/tools/config.py:L214` | Opaque bearer token | Conditional — required only when Odoo's proxy access feature is in use | No (default is empty string). [source: odoo/tools/config.py:L214-L214] |
+| `GPGPASSPHRASE` (build-time only) | `setup/package.py:L33` and `setup/package.py:L147,L158` (Debian/RPM signing) | GPG key passphrase | Yes when producing signed distribution packages | No. [source: setup/package.py:L33-L33] [source: setup/package.py:L147-L147] [source: setup/package.py:L158-L158] |
+| `GPGID` (build-time only) | `setup/package.py:L34` and `setup/package.py:L147` (Debian signing) | GPG key identifier | Yes when producing signed distribution packages | No. [source: setup/package.py:L33-L34] [source: setup/package.py:L147-L147] |
 
 ---
 
@@ -376,6 +378,8 @@ The Run instructions above were executed end-to-end on a clean Ubuntu 24.04 host
 
 ### Command transcript (with ISO-8601 nanosecond timestamps)
 
+The transcript below references the test PostgreSQL password through the shell variable `$DB_PASSWORD` (exported once at the start of the validation cycle and rotated/unset at the end). The literal value is intentionally never reproduced in this document, in keeping with the Secrets-table policy that no literal secret value appears in the deliverable. A reader reproducing the validation cycle should set `DB_PASSWORD` to a freshly generated test value (e.g., `export DB_PASSWORD=$(openssl rand -base64 18)`) before running the documented commands.
+
 ```text
 ===== HOST =====
 [2026-05-06T01:45:02.064417457] $ lsb_release -d -s
@@ -396,7 +400,7 @@ odoo|t|f                                # rolcreatedb=t, rolsuper=f -> not 'post
 [2026-05-06T01:45:02.152496953] $ python -m odoo --addons-path=./odoo/addons,./addons \
                                    -d odoo_validation \
                                    --db_host=127.0.0.1 --db_port=5432 \
-                                   --db_user=odoo --db_password=odoo \
+                                   --db_user=odoo --db_password=$DB_PASSWORD \
                                    -i base --without-demo=all --stop-after-init --no-http
 [2026-05-06T01:45:02.155342575] seed start
 [2026-05-06T01:45:12.847356519] seed end (exit 0)
@@ -414,7 +418,7 @@ odoo|t|f                                # rolcreatedb=t, rolsuper=f -> not 'post
 [2026-05-06T01:45:12.855303223] $ python -m odoo --addons-path=./odoo/addons,./addons \
                                    -d odoo_validation \
                                    --db_host=127.0.0.1 --db_port=5432 \
-                                   --db_user=odoo --db_password=odoo \
+                                   --db_user=odoo --db_password=$DB_PASSWORD \
                                    --http-interface=0.0.0.0 --http-port=8069 --gevent-port=8072 &
 [2026-05-06T01:45:12.856924094] (background server pid: 42248)
 
@@ -458,7 +462,7 @@ postgres   42262   10358   \_ postgres: 16/main: odoo odoo_validation 127.0.0.1(
 postgres   42265   10358   \_ postgres: 16/main: odoo postgres 127.0.0.1(38192) idle
 postgres   42266   10358   \_ postgres: 16/main: odoo postgres 127.0.0.1(38206) idle
 root       42248   42171   |       \_ python -m odoo --addons-path=./odoo/addons,./addons -d odoo_validation \
-                                       --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo \
+                                       --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=<REDACTED> \
                                        --http-interface=0.0.0.0 --http-port=8069 --gevent-port=8072
 ```
 
