@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_claude_assistant" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.claude.assistant</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <!-- Claude Assistant settings block: app/block/setting structure
+                     consistent with base_setup's General Settings layout. Inherits
+                     base_setup.res_config_settings_view_form (an auto_install module),
+                     so the ref resolves at runtime without a manifest dependency. -->
+                <app data-string="Claude Assistant" string="Claude Assistant" name="claude_assistant">
+                    <block title="Claude Assistant" name="claude_assistant_setting_container">
+                        <setting id="claude_assistant_api_key_setting"
+                                 string="Anthropic API Key"
+                                 help="Anthropic API key used by the Claude Assistant to call the Claude Messages API.">
+                            <field name="claude_assistant_api_key" password="True" nolabel="1"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+</odoo>
