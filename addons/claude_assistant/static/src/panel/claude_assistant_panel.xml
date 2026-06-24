@@ -55,7 +55,7 @@
 
                 <!-- (f) Input row: text input + send button, both disabled while pending -->
                 <div class="o_claude_assistant_panel_input">
-                    <input type="text" class="form-control" placeholder="Ask Claude..."
+                    <input type="text" class="form-control" placeholder="Ask Claude..." aria-label="Ask Claude"
                            t-att-value="state.draft"
                            t-att-disabled="state.pending"
                            t-on-input="(ev) => this.onInput(ev)"

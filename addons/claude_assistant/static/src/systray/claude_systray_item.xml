@@ -4,7 +4,7 @@
     <t t-name="claude_assistant.SystrayItem">
         <t t-if="this.isInternal">
             <div class="o_claude_assistant_systray d-flex align-items-center">
-                <button type="button" title="Claude Assistant" aria-label="Claude Assistant"
+                <button type="button" class="o_nav_entry border-0" title="Claude Assistant" aria-label="Claude Assistant"
                         t-on-click="() => this.toggle()">
                     <i class="fa fa-comments" role="img" aria-label="Claude Assistant"/>
                 </button>
