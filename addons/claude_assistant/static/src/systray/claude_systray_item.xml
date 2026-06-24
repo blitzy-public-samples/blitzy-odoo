@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <!--
+        QWeb template for the ClaudeSystrayItem OWL component
+        (static/src/systray/claude_systray_item.js). It is the addon's single
+        entry point: one systray icon, visible ONLY to internal users.
+
+        - `isInternal` is resolved on the component once `onWillStart` finishes
+          the `user.hasGroup('base.group_user')` check; when false the template
+          renders nothing, so portal/public users never see the entry.
+        - Clicking the icon calls `toggle()`, flipping the reactive `state.open`.
+        - While open, the role-aware ClaudeAssistantPanel is mounted and handed a
+          `close` callback (its optional `close` prop) so the panel header's
+          close button can hide it again.
+
+        Styling reuses Bootstrap utilities and consumes the navbar's own colors
+        (transparent button, inherited text color); the only addon-owned class
+        here is the scoped `o_claude_assistant_systray` hook, which overrides no
+        existing Odoo CSS.
+    -->
+    <t t-name="claude_assistant.SystrayItem">
+        <t t-if="isInternal">
+            <div class="o_claude_assistant_systray d-flex align-items-center">
+                <button type="button" class="btn bg-transparent border-0 px-2"
+                        t-on-click="() => this.toggle()"
+                        t-att-aria-expanded="state.open"
+                        title="Claude Assistant" aria-label="Claude Assistant">
+                    <i class="fa fa-lg fa-comments" role="img"/>
+                </button>
+                <ClaudeAssistantPanel t-if="state.open" close="() => this.toggle()"/>
+            </div>
+        </t>
+    </t>
+
+</templates>
