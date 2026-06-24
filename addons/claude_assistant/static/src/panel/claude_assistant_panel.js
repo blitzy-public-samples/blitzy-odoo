@@ -40,14 +40,23 @@ export class ClaudeAssistantPanel extends Component {
         });
 
         onWillStart(async () => {
-            const status = await rpc("/claude_assistant/status");
-            this.state.apiKeyConfigured = Boolean(status.api_key_configured);
-            this.state.odooVersion = status.odoo_version || "";
-            this.state.userRoles = status.user_roles || [];
-            if (this.state.userRoles.length) {
-                const firstRole = this.state.userRoles[0];
-                this.state.activeRole = firstRole.id;
-                this.state.activeMode = firstRole.modes.length ? firstRole.modes[0].id : null;
+            try {
+                const status = await rpc("/claude_assistant/status");
+                this.state.apiKeyConfigured = Boolean(status.api_key_configured);
+                this.state.odooVersion = status.odoo_version || "";
+                this.state.userRoles = status.user_roles || [];
+                if (this.state.userRoles.length) {
+                    const firstRole = this.state.userRoles[0];
+                    this.state.activeRole = firstRole.id;
+                    this.state.activeMode = firstRole.modes.length ? firstRole.modes[0].id : null;
+                }
+            } catch {
+                // A transient transport/session/server failure must NOT reject
+                // component startup. The safe useState defaults stay in place
+                // (apiKeyConfigured=false, userRoles=[], no active role/mode), so the
+                // panel still renders its not-available state; surface a short,
+                // non-sensitive notice (no error detail echoed -> no info leak).
+                this.notification.add("Could not load the Claude assistant.", { type: "danger" });
             }
         });
 

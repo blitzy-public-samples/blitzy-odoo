@@ -503,7 +503,16 @@ class ClaudeAssistantController(http.Controller):
 
         # ---- Step 6: truncate history to the last 10 messages. ----
         # Forwarded as-is to the SDK; content is NEVER mutated, parsed, or eval'd.
-        messages = (messages or [])[-10:]
+        # Defensive normalization: an authenticated client may send a malformed
+        # `messages` that is not a list (e.g. an object, string, or integer).
+        # Coerce any non-list to [] BEFORE slicing, so a bare `[-10:]` on a
+        # non-list can never raise TypeError. Such an exception would occur
+        # before the Anthropic exception mapping below and be swallowed by
+        # Odoo's JSON-RPC error machinery, bypassing this route's flat-body /
+        # real-HTTP-status response contract.
+        if not isinstance(messages, list):
+            messages = []
+        messages = messages[-10:]
 
         # ---- Steps 7 + 8: call Anthropic (28s transport timeout); map errors. ----
         try:

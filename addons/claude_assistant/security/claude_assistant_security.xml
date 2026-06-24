@@ -19,32 +19,35 @@
         is the native chain base.group_system => base.group_erp_manager =>
         base.group_user, which already exists in odoo/addons/base.
 
-        NOTE (Odoo 19.0 schema reality): in this Odoo version res.groups no
-        longer exposes a category_id field. The module-category association was
-        relocated to the new res.groups.privilege model - res.groups links to it
-        through privilege_id, and category_id now lives on res.groups.privilege
-        (see odoo/addons/base/models/res_groups_privilege.py and the res.groups
-        definition in odoo/addons/base/models/res_groups.py). Writing a
-        category_id field on a res.groups record therefore raises
-        "ValueError: Invalid field 'category_id' in 'res.groups'" at install.
-
-        Per the design rule "declare ONLY the specified groups/fields - no
-        extras" and the scope boundary that forbids any surface area beyond
-        these two new groups (i.e. no privilege_id, no res.groups.privilege
-        record, no other record), the module-category association is
-        intentionally OMITTED here rather than re-introduced via a privilege.
-        Category membership is purely a Settings UI grouping concern: it has NO
-        effect on res.users.has_group(), on the ir.model.access grants, or on
-        the controller's mode authorization. Each group's name is already
-        self-describing ("Claude Assistant / <role>"), so with no privilege the
-        computed full_name resolves cleanly to that name. This Odoo-core schema
-        change is documented here, not worked around, per project policy.
+        CATEGORY: both new groups are categorized under
+        base.module_category_technical, which is auto-created by the module
+        loader from this addon's manifest category="Technical" (see
+        odoo/modules/db.py). In Odoo 19.0 res.groups no longer carries a
+        category_id field directly; the module-category association now lives on
+        res.groups.privilege.category_id, and a group is attached to a privilege
+        via privilege_id (verified in odoo/addons/base/models/res_groups.py and
+        res_groups_privilege.py, and applied the same way by addons/account,
+        addons/hr_attendance and addons/event). We therefore declare a single
+        res.groups.privilege under the Technical category below and point both
+        new groups at it via privilege_id; this is the Odoo 19.0 mechanism that
+        places these two groups in the Technical category. (Note on existing
+        Odoo code, not a workaround: writing category_id directly on a res.groups
+        record raises "ValueError: Invalid field 'category_id' in 'res.groups'"
+        at install, so the privilege is the correct and only supported way to
+        express this categorization.)
     -->
+    <record model="res.groups.privilege" id="res_groups_privilege_claude_assistant">
+        <field name="name">Claude Assistant</field>
+        <field name="category_id" ref="base.module_category_technical"/>
+    </record>
+
     <record model="res.groups" id="group_developer">
         <field name="name">Claude Assistant / Developer</field>
+        <field name="privilege_id" ref="res_groups_privilege_claude_assistant"/>
     </record>
 
     <record model="res.groups" id="group_partner">
         <field name="name">Claude Assistant / Partner &amp; Integrator</field>
+        <field name="privilege_id" ref="res_groups_privilege_claude_assistant"/>
     </record>
 </odoo>
