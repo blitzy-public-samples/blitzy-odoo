@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Claude Assistant - stakeholder security groups.
+
+        This addon serves FOUR stakeholder groups. TWO reuse NATIVE Odoo groups
+        and are intentionally NOT redefined here:
+          - System Administrators  -> base.group_system
+          - Business Users         -> base.group_user
+        The TWO groups below are the only NEW groups introduced by this addon:
+          - Developers             -> claude_assistant.group_developer
+          - Partners & Integrators -> claude_assistant.group_partner
+
+        OPERATIONAL RULE (administrative, deliberately NOT enforced via implied_ids):
+        group_developer and group_partner must be assigned ONLY to users who
+        already hold base.group_user (internal users). This is intentionally NOT
+        encoded as implied_ids because the design forbids any implied hierarchy
+        among the four stakeholder groups. The only group hierarchy that applies
+        is the native chain base.group_system => base.group_erp_manager =>
+        base.group_user, which already exists in odoo/addons/base.
+
+        NOTE (Odoo 19.0 schema reality): in this Odoo version res.groups no
+        longer exposes a category_id field. The module-category association was
+        relocated to the new res.groups.privilege model - res.groups links to it
+        through privilege_id, and category_id now lives on res.groups.privilege
+        (see odoo/addons/base/models/res_groups_privilege.py and the res.groups
+        definition in odoo/addons/base/models/res_groups.py). Writing a
+        category_id field on a res.groups record therefore raises
+        "ValueError: Invalid field 'category_id' in 'res.groups'" at install.
+
+        Per the design rule "declare ONLY the specified groups/fields - no
+        extras" and the scope boundary that forbids any surface area beyond
+        these two new groups (i.e. no privilege_id, no res.groups.privilege
+        record, no other record), the module-category association is
+        intentionally OMITTED here rather than re-introduced via a privilege.
+        Category membership is purely a Settings UI grouping concern: it has NO
+        effect on res.users.has_group(), on the ir.model.access grants, or on
+        the controller's mode authorization. Each group's name is already
+        self-describing ("Claude Assistant / <role>"), so with no privilege the
+        computed full_name resolves cleanly to that name. This Odoo-core schema
+        change is documented here, not worked around, per project policy.
+    -->
+    <record model="res.groups" id="group_developer">
+        <field name="name">Claude Assistant / Developer</field>
+    </record>
+
+    <record model="res.groups" id="group_partner">
+        <field name="name">Claude Assistant / Partner &amp; Integrator</field>
+    </record>
+</odoo>
