@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <t t-name="claude_assistant.Panel">
+        <div class="o_claude_assistant_panel d-flex flex-column">
+            <!-- (b) Header: title + close button (top-right) -->
+            <div class="o_claude_assistant_panel_header d-flex align-items-center justify-content-between">
+                <span class="o_claude_assistant_panel_title fw-bold">Claude Assistant</span>
+                <button class="btn btn-light btn-sm" type="button" aria-label="Close" title="Close"
+                        t-on-click="() => this.onClose()">
+                    <i class="fa fa-times" role="img"/>
+                </button>
+            </div>
+
+            <!-- (a) Empty / config-warning state: API key not configured -->
+            <t t-if="!state.apiKeyConfigured">
+                <div class="o_claude_assistant_panel_empty">
+                    <p class="mb-2">The Claude Assistant API key is not configured.</p>
+                    <a href="/odoo/settings" class="btn btn-primary btn-sm">Open General Settings</a>
+                </div>
+            </t>
+
+            <!-- Configured: role selector + mode tabs + transcript + input -->
+            <t t-else="">
+                <!-- (c) Role selector (segmented): only when more than one role -->
+                <!-- aria-pressed exposes each role button's active/selected toggle state
+                     to assistive technology (WCAG 2.1 4.1.2 Name/Role/Value); the
+                     container role="group" aria-label already names the set. The
+                     btn-primary/btn-outline-primary classes remain the visual cue. -->
+                <div t-if="state.userRoles.length > 1"
+                     class="o_claude_assistant_panel_roles btn-group" role="group" aria-label="Role selector">
+                    <button t-foreach="state.userRoles" t-as="role" t-key="role.id"
+                            type="button" class="btn btn-sm"
+                            t-att-class="role.id === state.activeRole ? 'btn-primary' : 'btn-outline-primary'"
+                            t-att-aria-pressed="role.id === state.activeRole ? 'true' : 'false'"
+                            t-on-click="() => this.selectRole(role.id)">
+                        <t t-esc="role.label"/>
+                    </button>
+                </div>
+
+                <!-- (d) Mode tabs: one per mode of the active role -->
+                <!-- role="tablist"/role="tab" + aria-selected expose the tab set and
+                     which mode is currently selected to assistive technology
+                     (WCAG 2.1 4.1.2 Name/Role/Value, 1.3.1 Info & Relationships).
+                     All tabs stay Tab-focusable (no roving tabindex) to preserve the
+                     panel's natural Tab order, matching Odoo's own notebook pattern
+                     (web/static/src/core/notebook/notebook.xml). The .active class
+                     remains the visual cue. -->
+                <ul class="o_claude_assistant_panel_modes nav nav-tabs" role="tablist">
+                    <li t-foreach="currentModes" t-as="mode" t-key="mode.id" class="nav-item">
+                        <a href="#" class="nav-link" role="tab"
+                           t-att-class="mode.id === state.activeMode ? 'active' : ''"
+                           t-att-aria-selected="mode.id === state.activeMode ? 'true' : 'false'"
+                           t-on-click="(ev) => { ev.preventDefault(); this.selectMode(mode.id); }">
+                            <t t-esc="mode.label"/>
+                        </a>
+                    </li>
+                </ul>
+
+                <!-- (e) Conversation transcript: scrollable, per active key -->
+                <div class="o_claude_assistant_panel_messages" t-ref="messages">
+                    <div t-foreach="currentMessages" t-as="message" t-key="message_index"
+                         class="o_claude_assistant_message"
+                         t-att-class="message.role === 'user' ? 'o_claude_assistant_message_user' : 'o_claude_assistant_message_assistant'">
+                        <t t-esc="message.content"/>
+                    </div>
+                </div>
+
+                <!-- (f) Input row: text input + send button, both disabled while pending -->
+                <div class="o_claude_assistant_panel_input">
+                    <!-- A stable id+name give the field a programmatic identity so the
+                         browser no longer reports "A form field element should have an
+                         id or name attribute". aria-label is retained as the accessible
+                         name (no visible label is shown in this compact panel). -->
+                    <input type="text" class="form-control" placeholder="Ask Claude..."
+                           id="o_claude_assistant_message_input" name="o_claude_assistant_message_input"
+                           aria-label="Ask Claude"
+                           t-att-value="state.draft"
+                           t-att-disabled="state.pending"
+                           t-on-input="(ev) => this.onInput(ev)"
+                           t-on-keydown="(ev) => this.onKeydown(ev)"/>
+                    <button type="button" class="btn btn-primary"
+                            t-att-disabled="state.pending"
+                            t-on-click="() => this.send()">
+                        <t t-if="state.pending">Sending</t>
+                        <t t-else="">Send</t>
+                    </button>
+                </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

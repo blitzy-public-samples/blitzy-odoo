@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Claude Assistant - stakeholder security groups.
+
+        This addon serves FOUR stakeholder groups. TWO reuse NATIVE Odoo groups
+        and are intentionally NOT redefined here:
+          - System Administrators  -> base.group_system
+          - Business Users         -> base.group_user
+        The TWO groups below are the only NEW groups introduced by this addon:
+          - Developers             -> claude_assistant.group_developer
+          - Partners & Integrators -> claude_assistant.group_partner
+
+        OPERATIONAL RULE (administrative, deliberately NOT enforced via implied_ids):
+        group_developer and group_partner must be assigned ONLY to users who
+        already hold base.group_user (internal users). This is intentionally NOT
+        encoded as implied_ids because the design forbids any implied hierarchy
+        among the four stakeholder groups. The only group hierarchy that applies
+        is the native chain base.group_system => base.group_erp_manager =>
+        base.group_user, which already exists in odoo/addons/base.
+
+        CATEGORY: both new groups are categorized under
+        base.module_category_technical, which is auto-created by the module
+        loader from this addon's manifest category="Technical" (see
+        odoo/modules/db.py). In Odoo 19.0 res.groups no longer carries a
+        category_id field directly; the module-category association now lives on
+        res.groups.privilege.category_id, and a group is attached to a privilege
+        via privilege_id (verified in odoo/addons/base/models/res_groups.py and
+        res_groups_privilege.py, and applied the same way by addons/account,
+        addons/hr_attendance and addons/event). We therefore declare a single
+        res.groups.privilege under the Technical category below and point both
+        new groups at it via privilege_id; this is the Odoo 19.0 mechanism that
+        places these two groups in the Technical category. (Note on existing
+        Odoo code, not a workaround: writing category_id directly on a res.groups
+        record raises "ValueError: Invalid field 'category_id' in 'res.groups'"
+        at install, so the privilege is the correct and only supported way to
+        express this categorization.)
+    -->
+    <record model="res.groups.privilege" id="res_groups_privilege_claude_assistant">
+        <field name="name">Claude Assistant</field>
+        <field name="category_id" ref="base.module_category_technical"/>
+    </record>
+
+    <record model="res.groups" id="group_developer">
+        <field name="name">Claude Assistant / Developer</field>
+        <field name="privilege_id" ref="res_groups_privilege_claude_assistant"/>
+    </record>
+
+    <record model="res.groups" id="group_partner">
+        <field name="name">Claude Assistant / Partner &amp; Integrator</field>
+        <field name="privilege_id" ref="res_groups_privilege_claude_assistant"/>
+    </record>
+</odoo>

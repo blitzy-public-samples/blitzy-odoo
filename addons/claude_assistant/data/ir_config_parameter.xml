@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo noupdate="1">
+
+    <record id="claude_assistant_api_key_param" model="ir.config_parameter" forcecreate="0">
+        <field name="key">claude_assistant.api_key</field>
+        <field name="value"></field>
+    </record>
+
+</odoo>

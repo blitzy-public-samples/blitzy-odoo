@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_ir_module_module_claude_admin,claude.assistant.ir.module.module.admin,base.model_ir_module_module,base.group_system,1,0,0,0
+access_res_groups_claude_admin,claude.assistant.res.groups.admin,base.model_res_groups,base.group_system,1,0,0,0
+access_ir_logging_claude_admin,claude.assistant.ir.logging.admin,base.model_ir_logging,base.group_system,1,0,0,0
+access_ir_logging_claude_developer,claude.assistant.ir.logging.developer,base.model_ir_logging,claude_assistant.group_developer,1,0,0,0

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_claude_assistant" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.claude.assistant</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <!-- Inject the Claude Assistant API-key section as a dedicated block
+                 INSIDE the existing General Settings app (base_setup's
+                 <app name="general_settings">), mirroring the base_geolocalize
+                 pattern: inherit base_setup.res_config_settings_view_form and add
+                 settings within that app rather than declaring a new <app>.
+
+                 Why not a custom <app name="claude_assistant">: the settings form
+                 compiler renders each <app> as its own sidebar entry whose icon
+                 resolves to logo || "/<name>/static/description/icon.png"
+                 (addons/web/static/src/webclient/settings_form_view/settings_form_compiler.js).
+                 This addon ships no static/description/ icon (AAP scopes its assets
+                 to static/src/** only), so a custom <app> would request
+                 /claude_assistant/static/description/icon.png and yield a 404 plus a
+                 console error on every settings load, with a blank sidebar icon.
+                 Anchoring the block inside general_settings keeps the API key as a
+                 section of the General Settings form (AAP: "a Claude Assistant
+                 section injected into the General Settings form") and removes the
+                 icon requirement entirely. Placed before the About section; the
+                 field is masked via password="True" per the AAP. -->
+            <xpath expr="//div[@id='about']" position="before">
+                <block title="Claude Assistant" name="claude_assistant_setting_container">
+                    <setting id="claude_assistant_api_key_setting"
+                             string="Anthropic API Key"
+                             help="Anthropic API key used by the Claude Assistant to call the Claude Messages API.">
+                        <field name="claude_assistant_api_key" password="True" nolabel="1"/>
+                    </setting>
+                </block>
+            </xpath>
+        </field>
+    </record>
+</odoo>

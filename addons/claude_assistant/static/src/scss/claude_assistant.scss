@@ -1,0 +1,164 @@
+// Scoped styles for the Claude Assistant chat panel.
+// Every rule is nested under the single root class `.o_claude_assistant_panel`,
+// so this stylesheet never alters any element outside the panel.
+// All values resolve to Bootstrap/Odoo design tokens (theme-aware so the panel
+// stays legible in light, dark, and company-branded themes); the only bespoke
+// literal in the file is the panel's fixed width on the root container.
+.o_claude_assistant_panel {
+    // --- Fixed right-edge container -------------------------------------
+    // `top: 0` + `bottom: 0` yields full viewport height without a literal.
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 350px; // sole bespoke literal: the panel's fixed width
+    z-index: $zindex-fixed; // overlays main content, stays below modals/dialogs
+    display: flex;
+    flex-direction: column;
+    background-color: var(--body-bg); // theme-aware surface (remapped in dark mode)
+    color: var(--body-color); // theme-aware text (remapped in dark mode)
+    border-left: $border-width solid var(--border-color);
+    box-shadow: $box-shadow-lg; // elevation to separate the panel from content
+
+    // --- Header: title + close button -----------------------------------
+    .o_claude_assistant_panel_header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: $spacer * .5;
+        padding: $spacer * .5 $spacer;
+        border-bottom: $border-width solid var(--border-color);
+
+        // Ensure the icon-only close button meets the WCAG 2.5.5 minimum
+        // touch-target size (44 CSS pixels square). $spacer * 2.75 resolves to
+        // exactly that at the default root size, so NO dimensional literal is
+        // introduced; inline-flex keeps the glyph centred in the enlarged box.
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: $spacer * 2.75;
+            min-height: $spacer * 2.75;
+        }
+    }
+
+    .o_claude_assistant_panel_title {
+        // Drop the default heading margin so the header row stays compact;
+        // font weight is applied via a Bootstrap utility in the template.
+        margin: 0;
+    }
+
+    // --- Empty state: shown when the API key is not configured -----------
+    .o_claude_assistant_panel_empty {
+        padding: $spacer;
+        color: var(--warning-text-emphasis); // legible warning text in both themes
+        background-color: var(--warning-bg-subtle); // subtle warning fill, dark-safe
+
+        // WCAG 2.5.5 minimum touch-target size for the "Open General Settings"
+        // action ($spacer * 2.75 resolves to 44 CSS pixels at the default root).
+        a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: $spacer * 2.75;
+        }
+    }
+
+    // --- Role selector: segmented control, rendered only when >1 role ----
+    .o_claude_assistant_panel_roles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: $spacer * .25;
+        padding: $spacer * .5 $spacer;
+        border-bottom: $border-width solid var(--border-color);
+
+        // WCAG 2.5.5 minimum touch-target size for each role button
+        // ($spacer * 2.75 resolves to 44 CSS pixels at the default root).
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: $spacer * 2.75;
+        }
+    }
+
+    // --- Mode tabs: one per mode of the active role ----------------------
+    .o_claude_assistant_panel_modes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: $spacer * .25;
+        padding: $spacer * .5 $spacer 0;
+
+        // WCAG 2.5.5 minimum touch-target size for each mode tab link; flex
+        // vertically centres the label within the taller hit area
+        // ($spacer * 2.75 resolves to 44 CSS pixels at the default root). Scoped
+        // via the element selector (the only anchors here are the tab links) so
+        // no framework class definition is overridden.
+        a {
+            display: flex;
+            align-items: center;
+            min-height: $spacer * 2.75;
+        }
+    }
+
+    // --- Conversation transcript: grows to fill height and scrolls -------
+    // `flex: 1 1 auto` + `overflow-y: auto` cannot be expressed with utility
+    // classes alone, so they live here as required panel behavior.
+    .o_claude_assistant_panel_messages {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: $spacer * .5;
+        padding: $spacer;
+    }
+
+    // --- Per-message bubble ----------------------------------------------
+    // `align-self` in this column flex container shrinks each bubble to its
+    // content width, so no percentage max-width literal is needed.
+    .o_claude_assistant_message {
+        padding: $spacer * .5 $spacer;
+        border-radius: $border-radius;
+    }
+
+    .o_claude_assistant_message_user {
+        align-self: flex-end;
+        background-color: var(--primary-bg-subtle); // dark-safe accent fill
+        color: var(--primary-text-emphasis);
+    }
+
+    .o_claude_assistant_message_assistant {
+        align-self: flex-start;
+        background-color: var(--secondary-bg-subtle); // dark-safe accent fill
+        color: var(--secondary-text-emphasis);
+    }
+
+    // --- Input row: text field + send button -----------------------------
+    .o_claude_assistant_panel_input {
+        display: flex;
+        gap: $spacer * .5;
+        padding: $spacer;
+        border-top: $border-width solid var(--border-color);
+
+        // WCAG 2.5.5 minimum touch-target size for the message field and the
+        // send button ($spacer * 2.75 resolves to 44 CSS pixels at the default
+        // root). The input centres its text natively; inline-flex centres the
+        // button label.
+        input,
+        button {
+            min-height: $spacer * 2.75;
+        }
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+    }
+
+    // --- Responsive: span the full width on narrow viewports -------------
+    // Keyword/`0`/`auto` only, so no additional dimensional literal appears.
+    @include media-breakpoint-down(sm) {
+        left: 0;
+        width: auto;
+    }
+}
