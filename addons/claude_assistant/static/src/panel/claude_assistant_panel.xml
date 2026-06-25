@@ -68,7 +68,13 @@
 
                 <!-- (f) Input row: text input + send button, both disabled while pending -->
                 <div class="o_claude_assistant_panel_input">
-                    <input type="text" class="form-control" placeholder="Ask Claude..." aria-label="Ask Claude"
+                    <!-- A stable id+name give the field a programmatic identity so the
+                         browser no longer reports "A form field element should have an
+                         id or name attribute". aria-label is retained as the accessible
+                         name (no visible label is shown in this compact panel). -->
+                    <input type="text" class="form-control" placeholder="Ask Claude..."
+                           id="o_claude_assistant_message_input" name="o_claude_assistant_message_input"
+                           aria-label="Ask Claude"
                            t-att-value="state.draft"
                            t-att-disabled="state.pending"
                            t-on-input="(ev) => this.onInput(ev)"

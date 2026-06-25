@@ -28,6 +28,18 @@
         gap: $spacer * .5;
         padding: $spacer * .5 $spacer;
         border-bottom: $border-width solid var(--border-color);
+
+        // Ensure the icon-only close button meets the WCAG 2.5.5 minimum
+        // touch-target size (44 CSS pixels square). $spacer * 2.75 resolves to
+        // exactly that at the default root size, so NO dimensional literal is
+        // introduced; inline-flex keeps the glyph centred in the enlarged box.
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: $spacer * 2.75;
+            min-height: $spacer * 2.75;
+        }
     }
 
     .o_claude_assistant_panel_title {
@@ -41,6 +53,15 @@
         padding: $spacer;
         color: var(--warning-text-emphasis); // legible warning text in both themes
         background-color: var(--warning-bg-subtle); // subtle warning fill, dark-safe
+
+        // WCAG 2.5.5 minimum touch-target size for the "Open General Settings"
+        // action ($spacer * 2.75 resolves to 44 CSS pixels at the default root).
+        a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: $spacer * 2.75;
+        }
     }
 
     // --- Role selector: segmented control, rendered only when >1 role ----
@@ -50,6 +71,15 @@
         gap: $spacer * .25;
         padding: $spacer * .5 $spacer;
         border-bottom: $border-width solid var(--border-color);
+
+        // WCAG 2.5.5 minimum touch-target size for each role button
+        // ($spacer * 2.75 resolves to 44 CSS pixels at the default root).
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: $spacer * 2.75;
+        }
     }
 
     // --- Mode tabs: one per mode of the active role ----------------------
@@ -58,6 +88,17 @@
         flex-wrap: wrap;
         gap: $spacer * .25;
         padding: $spacer * .5 $spacer 0;
+
+        // WCAG 2.5.5 minimum touch-target size for each mode tab link; flex
+        // vertically centres the label within the taller hit area
+        // ($spacer * 2.75 resolves to 44 CSS pixels at the default root). Scoped
+        // via the element selector (the only anchors here are the tab links) so
+        // no framework class definition is overridden.
+        a {
+            display: flex;
+            align-items: center;
+            min-height: $spacer * 2.75;
+        }
     }
 
     // --- Conversation transcript: grows to fill height and scrolls -------
@@ -98,6 +139,20 @@
         gap: $spacer * .5;
         padding: $spacer;
         border-top: $border-width solid var(--border-color);
+
+        // WCAG 2.5.5 minimum touch-target size for the message field and the
+        // send button ($spacer * 2.75 resolves to 44 CSS pixels at the default
+        // root). The input centres its text natively; inline-flex centres the
+        // button label.
+        input,
+        button {
+            min-height: $spacer * 2.75;
+        }
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
     }
 
     // --- Responsive: span the full width on narrow viewports -------------

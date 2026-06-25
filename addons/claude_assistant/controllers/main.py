@@ -470,8 +470,16 @@ class ClaudeAssistantController(http.Controller):
             with an explicit HTTP status via :func:`_json_status`.
         """
         # ---- Step 1: validate mode against the fixed 15-value allow-list. ----
-        # Covers None, unknown strings, and any disallowed value.
-        if mode not in MODE_AUTHORIZATION:
+        # Covers None, unknown strings, and any disallowed value. The
+        # ``isinstance(mode, str)`` guard runs FIRST so a non-string, unhashable
+        # payload (e.g. a JSON array -> list, or object -> dict sent by an
+        # authenticated direct JSON-RPC client) is rejected as an invalid mode
+        # instead of raising ``TypeError: unhashable type`` at the dict-
+        # membership test below. Without it that TypeError would surface BEFORE
+        # this route's flat-body/real-HTTP-status contract and be swallowed into
+        # Odoo's JSON-RPC error envelope (HTTP 200 + a debug traceback under
+        # --dev), violating AAP chat Step 1 (every invalid mode -> clean 400).
+        if not isinstance(mode, str) or mode not in MODE_AUTHORIZATION:
             return _json_status({'error': 'Invalid mode'}, 400)
 
         # ---- Step 2: per-mode group check, IMMEDIATELY after validation. ----

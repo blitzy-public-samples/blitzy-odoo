@@ -102,18 +102,35 @@ class ClaudeAssistantControllerTest(HttpCase):
         )
 
     def test_chat_invalid_mode_returns_400(self):
-        """Unknown OR missing ``mode`` short-circuits at step 1 with HTTP 400."""
+        """Invalid ``mode`` short-circuits at step 1 with a clean HTTP 400.
+
+        Exercises every invalid shape: an unknown string, an omitted mode
+        (defaults to ``None``), and the two NON-STRING, UNHASHABLE payloads a
+        direct JSON-RPC client can send -- a JSON array (``list``) and a JSON
+        object (``dict``). The list/dict cases are the regression guard for the
+        ``isinstance(mode, str)`` check: before it, ``mode not in
+        MODE_AUTHORIZATION`` raised ``TypeError: unhashable type`` and Odoo
+        wrapped it into a 200 JSON-RPC server-error envelope (with a debug
+        traceback under --dev) instead of the required flat 400. Every case
+        MUST return HTTP 400 with the flat body ``{'error': 'Invalid mode'}``
+        and the Anthropic SDK MUST never be constructed (return precedes step 7).
+        """
         self.authenticate('admin', 'admin')
         # Patch the client purely to assert the SDK is never constructed -- an
         # invalid mode must return before step 7.
         with patch('anthropic.Anthropic') as MockAnthropic:
-            resp = self._post_chat({'mode': 'not_a_real_mode', 'messages': []})
-            # ``mode`` omitted entirely -> defaults to None -> still invalid.
-            resp2 = self._post_chat({'messages': []})
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.json(), {'error': 'Invalid mode'})
-        self.assertEqual(resp2.status_code, 400)
-        self.assertEqual(resp2.json(), {'error': 'Invalid mode'})
+            responses = [
+                self._post_chat({'mode': 'not_a_real_mode', 'messages': []}),
+                # ``mode`` omitted entirely -> defaults to None -> still invalid.
+                self._post_chat({'messages': []}),
+                # Non-string unhashable payloads: must NOT raise TypeError, must
+                # be rejected cleanly as an invalid mode (HTTP 400).
+                self._post_chat({'mode': [], 'messages': []}),
+                self._post_chat({'mode': {}, 'messages': []}),
+            ]
+        for resp in responses:
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.json(), {'error': 'Invalid mode'})
         MockAnthropic.assert_not_called()
 
     def test_chat_unauthorized_mode_returns_403(self):
