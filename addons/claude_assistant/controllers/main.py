@@ -2,11 +2,12 @@
 
 import logging
 
+import anthropic
+import werkzeug.exceptions
+
+import odoo.release
 from odoo import http
 from odoo.http import request, route
-import werkzeug.exceptions
-import odoo.release
-import anthropic
 
 _logger = logging.getLogger(__name__)
 
@@ -70,9 +71,9 @@ ROLES = [
         'group': 'base.group_system',
         'category': 'admin',
         'modes': [
-            {'id': 'modules',         'label': 'Modules'},
-            {'id': 'users',           'label': 'Users & Access'},
-            {'id': 'config',          'label': 'System Config'},
+            {'id': 'modules', 'label': 'Modules'},
+            {'id': 'users', 'label': 'Users & Access'},
+            {'id': 'config', 'label': 'System Config'},
             {'id': 'troubleshooting', 'label': 'Troubleshooting'},
         ],
     },
@@ -82,9 +83,9 @@ ROLES = [
         'group': 'base.group_user',
         'category': 'business',
         'modes': [
-            {'id': 'sales',      'label': 'Sales'},
+            {'id': 'sales', 'label': 'Sales'},
             {'id': 'accounting', 'label': 'Accounting'},
-            {'id': 'hr',         'label': 'HR'},
+            {'id': 'hr', 'label': 'HR'},
             {'id': 'operations', 'label': 'Operations'},
         ],
     },
@@ -94,10 +95,10 @@ ROLES = [
         'group': 'claude_assistant.group_developer',
         'category': 'developer',
         'modes': [
-            {'id': 'module_dev',  'label': 'Module Dev'},
+            {'id': 'module_dev', 'label': 'Module Dev'},
             {'id': 'integration', 'label': 'Integrations'},
-            {'id': 'debugging',   'label': 'Debugging'},
-            {'id': 'testing',     'label': 'Testing'},
+            {'id': 'debugging', 'label': 'Debugging'},
+            {'id': 'testing', 'label': 'Testing'},
         ],
     },
     {
@@ -106,8 +107,8 @@ ROLES = [
         'group': 'claude_assistant.group_partner',
         'category': 'partner',
         'modes': [
-            {'id': 'deployment',     'label': 'Deployment'},
-            {'id': 'customization',  'label': 'Customization'},
+            {'id': 'deployment', 'label': 'Deployment'},
+            {'id': 'customization', 'label': 'Customization'},
             {'id': 'client_support', 'label': 'Client Support'},
         ],
     },

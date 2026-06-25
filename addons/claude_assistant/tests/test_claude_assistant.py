@@ -141,7 +141,7 @@ class ClaudeAssistantControllerTest(HttpCase):
         self.ICP.sudo().set_param(API_KEY_PARAM, DUMMY_API_KEY)
         with patch('anthropic.Anthropic') as MockAnthropic:
             resp = self._post_chat(
-                {'mode': 'modules', 'messages': [{'role': 'user', 'content': 'hi'}]}
+                {'mode': 'modules', 'messages': [{'role': 'user', 'content': 'hi'}]},
             )
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.json(), {'error': 'Forbidden'})
@@ -154,7 +154,7 @@ class ClaudeAssistantControllerTest(HttpCase):
         self.ICP.sudo().set_param(API_KEY_PARAM, '')
         with patch('anthropic.Anthropic') as MockAnthropic:
             resp = self._post_chat(
-                {'mode': 'modules', 'messages': [{'role': 'user', 'content': 'hi'}]}
+                {'mode': 'modules', 'messages': [{'role': 'user', 'content': 'hi'}]},
             )
         self.assertEqual(resp.status_code, 503)
         self.assertEqual(resp.json(), {'response': None, 'error': 'API key not configured'})
@@ -222,7 +222,7 @@ class ClaudeAssistantControllerTest(HttpCase):
                     MockAnthropic.return_value.messages.create.side_effect = \
                         exc_class.__new__(exc_class)
                     resp = self._post_chat(
-                        {'mode': 'sales', 'messages': [{'role': 'user', 'content': 'hi'}]}
+                        {'mode': 'sales', 'messages': [{'role': 'user', 'content': 'hi'}]},
                     )
                 self.assertEqual(resp.status_code, expected_status)
                 body = resp.json()
