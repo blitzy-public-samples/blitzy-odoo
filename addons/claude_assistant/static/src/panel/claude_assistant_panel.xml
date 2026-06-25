@@ -23,21 +23,34 @@
             <!-- Configured: role selector + mode tabs + transcript + input -->
             <t t-else="">
                 <!-- (c) Role selector (segmented): only when more than one role -->
+                <!-- aria-pressed exposes each role button's active/selected toggle state
+                     to assistive technology (WCAG 2.1 4.1.2 Name/Role/Value); the
+                     container role="group" aria-label already names the set. The
+                     btn-primary/btn-outline-primary classes remain the visual cue. -->
                 <div t-if="state.userRoles.length > 1"
                      class="o_claude_assistant_panel_roles btn-group" role="group" aria-label="Role selector">
                     <button t-foreach="state.userRoles" t-as="role" t-key="role.id"
                             type="button" class="btn btn-sm"
                             t-att-class="role.id === state.activeRole ? 'btn-primary' : 'btn-outline-primary'"
+                            t-att-aria-pressed="role.id === state.activeRole ? 'true' : 'false'"
                             t-on-click="() => this.selectRole(role.id)">
                         <t t-esc="role.label"/>
                     </button>
                 </div>
 
                 <!-- (d) Mode tabs: one per mode of the active role -->
-                <ul class="o_claude_assistant_panel_modes nav nav-tabs">
+                <!-- role="tablist"/role="tab" + aria-selected expose the tab set and
+                     which mode is currently selected to assistive technology
+                     (WCAG 2.1 4.1.2 Name/Role/Value, 1.3.1 Info & Relationships).
+                     All tabs stay Tab-focusable (no roving tabindex) to preserve the
+                     panel's natural Tab order, matching Odoo's own notebook pattern
+                     (web/static/src/core/notebook/notebook.xml). The .active class
+                     remains the visual cue. -->
+                <ul class="o_claude_assistant_panel_modes nav nav-tabs" role="tablist">
                     <li t-foreach="currentModes" t-as="mode" t-key="mode.id" class="nav-item">
-                        <a href="#" class="nav-link"
+                        <a href="#" class="nav-link" role="tab"
                            t-att-class="mode.id === state.activeMode ? 'active' : ''"
+                           t-att-aria-selected="mode.id === state.activeMode ? 'true' : 'false'"
                            t-on-click="(ev) => { ev.preventDefault(); this.selectMode(mode.id); }">
                             <t t-esc="mode.label"/>
                         </a>
