@@ -2622,6 +2622,137 @@ class Json2Dispatcher(Dispatcher):
         return self.request.make_json_response(body, headers=headers, status=status)
 
 
+class RestDispatcher(Dispatcher):
+    routing_type = 'rest'
+    mimetypes = ('application/json',)
+
+    def __init__(self, request):
+        super().__init__(request)
+        self.jsonrequest = None
+
+    @classmethod
+    def is_compatible_with(cls, request):
+        # Dispatcher selection is keyed on the route's *declared* type in
+        # _set_request_dispatcher (``dispatcher_cls = _dispatchers[routing['type']]``,
+        # ~L2143), NOT on the Content-Type, so a ``@route(type='rest')`` route
+        # always resolves to RestDispatcher regardless of the ``application/json``
+        # mimetype it shares with Json2Dispatcher. This method is only the
+        # compatibility *guard* that (a) enforces a JSON media type for REST
+        # routes and (b) restricts the ``/api/`` path space, so that
+        # RestDispatcher never appears as a spurious "compatible" option in the
+        # ``415 Unsupported Media Type`` message emitted for non-REST routes
+        # (see AAP §0.6.2). The existing dispatchers' 415 messaging is thus
+        # left unchanged.
+        return (
+            request.httprequest.mimetype in cls.mimetypes
+            and request.httprequest.path.startswith('/api/')
+        )
+
+    def dispatch(self, endpoint, args):
+        """
+        Dispatch a ``type='rest'`` request to a controller of the
+        ``rest_api`` addon.
+
+        The request body (if any) is parsed as JSON and merged with the
+        path parameters (``args``); the merged mapping is exposed as
+        ``request.params`` and the request is delegated to the matched
+        controller through the very same ``registry['ir.http']._dispatch``
+        pipeline used by :class:`JsonRPCDispatcher` and
+        :class:`Json2Dispatcher`. Consequently ``ir.model.access`` /
+        ``ir.rule`` / field-group authorization and the
+        registry / Environment / retrying machinery are reused verbatim.
+
+        Strict pydantic validation of the request DTO (``extra='forbid'``,
+        ``strict=True``), the mapping of the HTTP verb to the ORM operation
+        (GET -> search_read/read, POST -> create, PATCH -> write,
+        DELETE -> unlink) and response serialization are all performed by
+        the controller endpoint itself, which lives in ``addons/rest_api``.
+        This keeps the dispatcher thin and free of any pydantic or addon
+        import. A pydantic ``ValidationError`` raised by the controller
+        *before* any ``request.env[model]`` access is turned into an HTTP
+        422 by :meth:`handle_error` (anti-corruption boundary, AAP G3 /
+        §0.6.5 Gate 2).
+        """
+        if self.request.httprequest.content_length:
+            try:
+                self.jsonrequest = self.request.get_json_data()
+            except ValueError as exc:
+                raise werkzeug.exceptions.BadRequest(
+                    f"could not parse the body as json: {exc.args[0]}",
+                ) from exc
+        try:
+            self.request.params = self.jsonrequest | args
+        except TypeError:
+            self.request.params = dict(args)  # make a copy
+
+        if self.request.db:
+            result = self.request.registry['ir.http']._dispatch(endpoint)
+        else:
+            result = endpoint(**self.request.params)
+        if isinstance(result, Response):
+            return result
+        return self.request.make_json_response(result)
+
+    def handle_error(self, exc: Exception) -> collections.abc.Callable:
+        """
+        Render any exception raised while serving a ``type='rest'`` route
+        as the REST error envelope
+        ``{"status": int, "code": str, "message": str, "details": list}``.
+
+        This envelope is intentionally DISTINCT from -- and MUST never leak
+        into -- the JSON-RPC error envelope ``{code, message, data}`` of
+        :class:`JsonRPCDispatcher` (AAP §0.1.1 implicit requirement,
+        §0.7.1).
+        """
+        details = []
+        # A pydantic v2 ValidationError -> HTTP 422. It is detected
+        # module-qualified (its __module__ starts with "pydantic") so that
+        # odoo.http needs NO pydantic import (isolation mandate) AND so that
+        # it is NOT confused with odoo.exceptions.ValidationError, which is a
+        # UserError subclass that merely shares the class *name*.
+        if (
+            type(exc).__name__ == 'ValidationError'
+            and type(exc).__module__.split('.')[0] in ('pydantic', 'pydantic_core')
+        ):
+            status = 422
+            code = 'validation_error'
+            message = "Request validation failed"
+            try:
+                for err in exc.errors():
+                    details.append({
+                        'loc': list(err.get('loc', ())),
+                        'msg': err.get('msg', ''),
+                        'type': err.get('type', ''),
+                    })
+            except Exception:  # noqa: BLE001 - never fail while building an error
+                details = []
+        elif isinstance(exc, HTTPException) and exc.response is not None:
+            return exc.response
+        elif isinstance(exc, HTTPException):
+            status = exc.code or 500
+            code = (exc.name or 'error').lower().replace(' ', '_')
+            message = exc.description
+        elif isinstance(exc, UserError):
+            # Covers AccessDenied (403), AccessError (403), MissingError (404),
+            # odoo.exceptions.ValidationError (422) and plain UserError (422)
+            # via their ``http_status`` attribute.
+            status = getattr(exc, 'http_status', 422)
+            code = type(exc).__name__
+            message = exc.args[0] if exc.args else str(exc)
+        else:
+            status = 500
+            code = 'internal_server_error'
+            message = "Internal Server Error"
+
+        body = {
+            'status': int(status),
+            'code': code,
+            'message': message,
+            'details': details,
+        }
+        return self.request.make_json_response(body, status=int(status))
+
+
 # =========================================================
 # WSGI Entry Point
 # =========================================================
