@@ -66,6 +66,7 @@ throughout:
 
 import json
 
+from odoo.fields import Command
 from odoo.tests import common
 from odoo.tools import mute_logger
 
@@ -74,12 +75,16 @@ from odoo.tools import mute_logger
 class TestRestCrud(common.HttpCase):
     """End-to-end verb -> ORM-operation mapping tests for the REST surface.
 
-    ``res.partner`` (always available through ``base``) carries the
-    non-skippable full-lifecycle proof of all five mappings; the four remaining
-    pilot models are exercised opportunistically, guarded by
-    ``if model not in self.env`` so the suite is robust whether or not the
-    ``sale`` / ``account`` / ``stock`` / ``crm`` addons are installed alongside
-    ``rest_api``.
+    ``res.partner`` (always available through ``base``) carries a non-skippable
+    full-lifecycle proof of all five mappings. Each remaining pilot --
+    ``sale.order`` / ``account.move`` / ``stock.picking`` / ``crm.lead`` -- has
+    its own dedicated, STRICT lifecycle test that, in the expected install
+    profile (the pilot addon installed alongside ``rest_api``), runs end to end
+    and fails on any REST error; a test skips only when its addon is genuinely
+    absent, so the suite still passes under a bare ``-i rest_api`` install. The
+    three pilots exposing an x2many write DTO additionally prove the
+    ``Command.set`` full-list REPLACE and empty-list CLEAR semantics their
+    controllers must apply.
     """
 
     def setUp(self):
@@ -287,179 +292,385 @@ class TestRestCrud(common.HttpCase):
         self._assert_rest_error_envelope(resp, 404)
 
     # ==================================================================
-    # Phase C -- the four optional pilots, each guarded by installation.
+    # Phase C -- per-pilot full CRUD lifecycles (the four remaining pilots).
+    #
+    # Each pilot gets its own dedicated, STRICT lifecycle test. In the
+    # *expected install profile* (the pilot addon installed alongside
+    # ``rest_api``) every test runs end to end and FAILS on any REST error --
+    # there is no tolerated create/write failure. A test ``skipTest``s only when
+    # its addon is genuinely absent from the registry, so the suite still passes
+    # under a bare ``-i rest_api`` install. Because a bare pilot install ships no
+    # demo products, every relational fixture is built self-containedly through
+    # the ORM.
+    #
+    # For the three pilots whose write DTOs expose an x2many relation
+    # (``sale.order.order_line``, ``account.move.invoice_line_ids`` and
+    # ``stock.picking.move_ids``) the lifecycle additionally proves the
+    # ``Command.set`` full-list semantics the controllers must apply: a PATCH
+    # carrying a *subset* id list REPLACES the relation down to that subset, and
+    # a PATCH carrying an EMPTY list CLEARS it. The empty-list clear is the
+    # decisive assertion -- a controller that forwarded the bare list straight to
+    # the ORM (the defect these tests guard) would leave the lines untouched,
+    # because a bare empty list is a silent no-op on ``write``.
     # ==================================================================
-    def _a_partner_id(self):
-        """Create and return the id of a throwaway partner (for relations)."""
-        return self.env['res.partner'].create({'name': 'CRUD Rel Partner'}).id
 
-    def _a_picking_type_id(self):
-        """Return the id of any ``stock.picking.type`` (or ``False`` if none)."""
-        return self.env['stock.picking.type'].search([], limit=1).id
+    def _a_product(self):
+        """Create and return a self-contained consumable product.
 
-    def _optional_specs(self):
-        """Return the per-model CRUD spec table for the four optional pilots.
+        A bare pilot-addon install ships no demo products, so the relational
+        fixtures below (sale lines, invoice lines, stock moves) mint their own.
 
-        ORM-create values and REST-create payloads are wrapped in zero-argument
-        callables so that model-specific lookups (a partner id, a picking-type
-        id) are evaluated **only** for models that are actually installed --
-        every spec is reached solely from inside the ``if model in self.env``
-        guard in :meth:`test_optional_models_crud`.
-
-        Each spec maps to:
-
-        * ``model`` -- the ORM model name gating the whole entry.
-        * ``base`` -- the resource collection path.
-        * ``orm_vals`` -- callable returning ``create`` vals for the robust,
-          ORM-seeded read/list/delete proof.
-        * ``rest_payload`` -- callable returning the minimal strict-DTO body for
-          the best-effort REST ``create`` proof.
-        * ``patch_payload`` / ``patch_field`` -- a single field mutation for the
-          best-effort REST ``write`` proof and the key to verify in the Read
-          body.
-
-        :rtype: list[dict]
+        :return: a ``product.product`` singleton.
         """
-        return [
-            {
-                'model': 'sale.order',
-                'base': '/api/v1/sale-orders',
-                'orm_vals': lambda: {'partner_id': self._a_partner_id()},
-                'rest_payload': lambda: {'partner_id': self._a_partner_id()},
-                'patch_payload': {'client_order_ref': 'REF-1'},
-                'patch_field': 'client_order_ref',
-            },
-            {
-                'model': 'account.move',
-                'base': '/api/v1/account-moves',
-                'orm_vals': lambda: {'move_type': 'entry'},
-                'rest_payload': lambda: {'move_type': 'entry'},
-                'patch_payload': {'ref': 'CRUD-REF'},
-                'patch_field': 'ref',
-            },
-            {
-                'model': 'stock.picking',
-                'base': '/api/v1/stock-pickings',
-                'orm_vals': lambda: {'picking_type_id': self._a_picking_type_id()},
-                'rest_payload': lambda: {'picking_type_id': self._a_picking_type_id()},
-                'patch_payload': {'origin': 'CRUD-ORIGIN'},
-                'patch_field': 'origin',
-            },
-            {
-                'model': 'crm.lead',
-                'base': '/api/v1/crm-leads',
-                'orm_vals': lambda: {'name': 'CRUD Lead', 'type': 'lead'},
-                'rest_payload': lambda: {'name': 'CRUD Lead REST', 'type': 'lead'},
-                'patch_payload': {'name': 'CRUD Lead v2'},
-                'patch_field': 'name',
-            },
-        ]
+        return self.env['product.product'].create({
+            'name': 'CRUD Product',
+            'type': 'consu',
+        })
 
-    def test_optional_models_crud(self):
-        """Exercise the verb -> ORM mapping for every *installed* optional pilot.
+    def _a_partner(self):
+        """Create and return a throwaway partner for relational fixtures.
 
-        For each of ``sale.order`` / ``account.move`` / ``stock.picking`` /
-        ``crm.lead`` that is present in the registry, two complementary proofs
-        run inside a :meth:`subTest`:
-
-        #. **Robust ORM-seeded proof** -- a record is created directly through
-           the ORM (independent of the REST create's mandatory-field surface),
-           then ``GET`` collection, ``GET`` item and ``DELETE`` prove
-           ``search_read`` + ``search_count``, ``read`` and ``unlink``.
-        #. **Best-effort REST create/write proof** -- ``POST`` then ``PATCH``
-           through the REST surface prove ``create`` and ``write`` *when* the
-           minimal DTO payload is a sufficient create body. Should a model
-           demand additional mandatory fields (yielding ``422`` / ``400``), the
-           failure is tolerated: the mandatory verb -> ORM proof is already
-           carried by ``res.partner`` (Phase B) and by the ORM-seeded proof
-           above.
-
-        Models whose addon is not installed are skipped, so the suite passes
-        cleanly under a bare ``-i rest_api`` install as well as under a fuller
-        install that includes the pilot addons.
+        :return: a ``res.partner`` singleton.
         """
-        for spec in self._optional_specs():
-            model = spec['model']
-            if model not in self.env:
-                # Addon providing this pilot model is not installed.
-                continue
-            with self.subTest(model=model):
-                self._run_optional_model_crud(spec)
+        return self.env['res.partner'].create({'name': 'CRUD Rel Partner'})
 
-    def _run_optional_model_crud(self, spec):
-        """Run both CRUD proofs for one installed optional pilot model.
+    def _assert_xmany_replace_and_clear(self, base, record, field, child_ids):
+        """Prove ``Command.set`` REPLACE + CLEAR semantics through REST PATCH.
 
-        :param dict spec: a single entry from :meth:`_optional_specs`.
+        Given a ``record`` already carrying at least two related ``child_ids`` on
+        its x2many ``field``, this asserts the two behaviours that distinguish a
+        correct ``[Command.set(ids)]`` conversion from the bare-list defect:
+
+        #. **Replace to a subset** -- ``PATCH {field: [child_ids[0]]}`` must
+           reduce the relation to *exactly* that one id (proving the whole list
+           is replaced, not merely extended/linked), verified both in the PATCH
+           Read body and against ORM ground truth.
+        #. **Clear with an empty list** -- ``PATCH {field: []}`` must empty the
+           relation. This is the decisive assertion: with the unfixed controller
+           the empty list reaches ``write`` verbatim and is a no-op, leaving the
+           lines in place; only the ``[Command.set([])]`` conversion clears them.
+
+        :param str base: the resource collection path
+            (e.g. ``/api/v1/sale-orders``).
+        :param record: the parent recordset (a singleton).
+        :param str field: the x2many field name under test.
+        :param list child_ids: the currently-related ids (``len >= 2``).
         """
-        model = spec['model']
-        base = spec['base']
-        Model = self.env[model]
+        self.assertGreaterEqual(
+            len(child_ids), 2, "fixture must seed >=2 children to prove replace",
+        )
+        keep = child_ids[0]
 
-        # === Robust proof: read / list / delete via an ORM-created record ===
-        # Seed the fixture through the ORM. A few pilots need more environment
-        # setup than a bare addon install provides -- ``account.move`` needs a
-        # journal (hence a chart of accounts) and ``stock.picking`` needs an
-        # operation type. When the minimal vals cannot yield a record in the
-        # current install, that pilot is simply not exercisable here, so it is
-        # skipped gracefully: the mandatory verb -> ORM proof is carried in full
-        # by ``res.partner`` (Phase B) irrespective of the optional pilots. This
-        # tolerance applies ONLY to seeding the fixture; once a record exists the
-        # read / list / delete assertions below are strict.
-        try:
-            rec = Model.create(spec['orm_vals']())
-        except Exception:  # noqa: BLE001 - environment-driven fixture gap, tolerated by design
-            return
-        # The HTTP worker shares this cursor; flush so it sees the fixture.
+        # -- REPLACE the full relation down to a strict subset --------------
+        resp = self._patch('%s/%d' % (base, record.id), {field: [keep]})
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(
+            resp.json().get(field), [keep],
+            "PATCH %s=[one id] must REPLACE the relation to exactly that id"
+            % field,
+        )
+        # ORM ground truth (the worker wrote through the shared cursor).
+        self.env.invalidate_all()
+        self.assertEqual(
+            record[field].ids, [keep],
+            "ORM: %s must be replaced down to the single kept id" % field,
+        )
+
+        # -- CLEAR the relation with an empty list (decisive) ---------------
+        resp = self._patch('%s/%d' % (base, record.id), {field: []})
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(
+            resp.json().get(field), [],
+            "PATCH %s=[] must CLEAR the relation via Command.set([])" % field,
+        )
+        self.env.invalidate_all()
+        self.assertEqual(
+            record[field].ids, [],
+            "ORM: %s=[] must clear every line "
+            "(a bare-list no-op would leave them in place)" % field,
+        )
+
+    # ------------------------------------------------------------------
+    # sale.order -- full lifecycle + order_line x2many replace/clear.
+    # ------------------------------------------------------------------
+    def test_sale_order_full_crud_lifecycle(self):
+        """POST -> GET(id) -> GET(collection) -> PATCH -> x2many -> DELETE.
+
+        Strict in the expected install profile: skips only if ``sale`` is not
+        installed. Proves every verb -> ORM mapping for ``sale.order`` and the
+        ``order_line`` full-list replace/clear semantics.
+        """
+        if 'sale.order' not in self.env:
+            self.skipTest("sale addon not installed in this profile")
+        Order = self.env['sale.order']
+        partner = self._a_partner()
+        product = self._a_product()
         self.env.flush_all()
 
-        # GET collection -> search_read + search_count.
-        resp = self._get(base, params={'domain': json.dumps([['id', '=', rec.id]])})
+        # -- POST (create) -> ORM create, HTTP 200 with the Read body -------
+        resp = self._post('/api/v1/sale-orders', {'partner_id': partner.id})
         self.assertEqual(resp.status_code, 200, resp.text)
-        self._assert_collection_body(resp.json(), rec.id)
+        body = resp.json()
+        self.assertIn('id', body)
+        oid = body['id']
+        self.env.invalidate_all()
+        order = Order.browse(oid)
+        self.assertTrue(order.exists(), "POST must have created the sale.order")
+        self.assertEqual(order.partner_id.id, partner.id)
 
-        # GET item -> read.
-        resp = self._get('%s/%d' % (base, rec.id))
+        # -- GET item (read) ------------------------------------------------
+        resp = self._get('/api/v1/sale-orders/%d' % oid)
         self.assertEqual(resp.status_code, 200, resp.text)
-        self.assertEqual(resp.json()['id'], rec.id)
+        self.assertEqual(resp.json()['id'], oid)
 
-        # DELETE -> unlink (204, empty body); confirm via ORM ground truth.
-        resp = self._delete('%s/%d' % (base, rec.id))
+        # -- GET collection (search_read + search_count) --------------------
+        resp = self._get(
+            '/api/v1/sale-orders',
+            params={'domain': json.dumps([['id', '=', oid]])},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self._assert_collection_body(resp.json(), oid)
+
+        # -- PATCH (write) a scalar field -----------------------------------
+        resp = self._patch(
+            '/api/v1/sale-orders/%d' % oid, {'client_order_ref': 'REF-1'},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json().get('client_order_ref'), 'REF-1')
+
+        # -- x2many replace/clear on order_line -----------------------------
+        # Seed two lines through the ORM (products make them real lines), then
+        # flush so the HTTP worker observes them before the PATCHes.
+        order.write({'order_line': [
+            Command.create({'product_id': product.id, 'product_uom_qty': 1}),
+            Command.create({'product_id': product.id, 'product_uom_qty': 2}),
+        ]})
+        self.env.flush_all()
+        self.assertEqual(len(order.order_line), 2)
+        self._assert_xmany_replace_and_clear(
+            '/api/v1/sale-orders', order, 'order_line', order.order_line.ids,
+        )
+
+        # -- DELETE (unlink) -> HTTP 204, empty body ------------------------
+        resp = self._delete('/api/v1/sale-orders/%d' % oid)
         self.assertEqual(resp.status_code, 204, resp.text)
         self.assertEqual(resp.text, '')
         self.env.invalidate_all()
         self.assertFalse(
-            Model.browse(rec.id).exists(),
-            "DELETE must have unlinked the %s record" % model,
+            Order.browse(oid).exists(),
+            "DELETE must have unlinked the sale.order",
         )
 
-        # === Best-effort proof: create / write via the REST surface ===
-        # Tolerate a non-2xx create for models that require more mandatory
-        # fields than the minimal DTO payload supplies -- mute the expected
-        # error logs in that case.
-        with mute_logger('odoo.http', 'odoo.sql_db'):
-            resp = self._post(base, spec['rest_payload']())
-        if resp.status_code != 200:
-            # Tolerated: the mandatory verb -> ORM proof is already covered by
-            # res.partner (Phase B) and the ORM-seeded proof above.
-            return
+    # ------------------------------------------------------------------
+    # account.move -- full lifecycle + invoice_line_ids x2many replace/clear.
+    # ------------------------------------------------------------------
+    def test_account_move_full_crud_lifecycle(self):
+        """POST -> GET(id) -> GET(collection) -> PATCH -> x2many -> DELETE.
 
-        cbody = resp.json()
-        self.assertIn('id', cbody, "REST create must return the created id")
-        new_id = cbody['id']
-        # ORM ground truth: the REST POST really created the record.
+        Strict in the expected install profile: skips only if ``account`` is not
+        installed. Proves every verb -> ORM mapping for ``account.move`` and the
+        ``invoice_line_ids`` full-list replace/clear semantics on a draft
+        customer invoice.
+        """
+        if 'account.move' not in self.env:
+            self.skipTest("account addon not installed in this profile")
+        Move = self.env['account.move']
+        partner = self._a_partner()
+        product = self._a_product()
+        self.env.flush_all()
+
+        # -- POST (create) a draft customer invoice -------------------------
+        resp = self._post(
+            '/api/v1/account-moves',
+            {'move_type': 'out_invoice', 'partner_id': partner.id},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertIn('id', body)
+        mid = body['id']
         self.env.invalidate_all()
-        self.assertTrue(
-            Model.browse(new_id).exists(),
-            "REST POST must have created the %s record" % model,
+        move = Move.browse(mid)
+        self.assertTrue(move.exists(), "POST must have created the account.move")
+        self.assertEqual(move.move_type, 'out_invoice')
+
+        # -- GET item -------------------------------------------------------
+        resp = self._get('/api/v1/account-moves/%d' % mid)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()['id'], mid)
+
+        # -- GET collection -------------------------------------------------
+        resp = self._get(
+            '/api/v1/account-moves',
+            params={'domain': json.dumps([['id', '=', mid]])},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self._assert_collection_body(resp.json(), mid)
+
+        # -- PATCH a scalar field -------------------------------------------
+        resp = self._patch('/api/v1/account-moves/%d' % mid, {'ref': 'CRUD-REF'})
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json().get('ref'), 'CRUD-REF')
+
+        # -- x2many replace/clear on invoice_line_ids -----------------------
+        move.write({'invoice_line_ids': [
+            Command.create(
+                {'product_id': product.id, 'quantity': 1, 'price_unit': 100},
+            ),
+            Command.create(
+                {'product_id': product.id, 'quantity': 2, 'price_unit': 50},
+            ),
+        ]})
+        self.env.flush_all()
+        self.assertEqual(len(move.invoice_line_ids), 2)
+        self._assert_xmany_replace_and_clear(
+            '/api/v1/account-moves', move, 'invoice_line_ids',
+            move.invoice_line_ids.ids,
         )
 
-        # PATCH -> write (best-effort): only assert the mutation when the write
-        # itself succeeds.
-        presp = self._patch('%s/%d' % (base, new_id), spec['patch_payload'])
-        if presp.status_code == 200:
-            field = spec['patch_field']
-            self.assertEqual(
-                presp.json().get(field),
-                spec['patch_payload'][field],
-                "REST PATCH must reflect the written %s" % field,
-            )
+        # -- DELETE ---------------------------------------------------------
+        resp = self._delete('/api/v1/account-moves/%d' % mid)
+        self.assertEqual(resp.status_code, 204, resp.text)
+        self.assertEqual(resp.text, '')
+        self.env.invalidate_all()
+        self.assertFalse(
+            Move.browse(mid).exists(),
+            "DELETE must have unlinked the account.move",
+        )
+
+    # ------------------------------------------------------------------
+    # stock.picking -- full lifecycle + move_ids x2many replace/clear.
+    # ------------------------------------------------------------------
+    def test_stock_picking_full_crud_lifecycle(self):
+        """POST -> GET(id) -> GET(collection) -> PATCH -> x2many -> DELETE.
+
+        Strict in the expected install profile: skips only if ``stock`` is not
+        installed. Proves every verb -> ORM mapping for ``stock.picking`` and the
+        ``move_ids`` full-list replace/clear semantics on a draft transfer.
+        """
+        if 'stock.picking' not in self.env:
+            self.skipTest("stock addon not installed in this profile")
+        Picking = self.env['stock.picking']
+        picking_type = self.env['stock.picking.type'].search([], limit=1)
+        self.assertTrue(picking_type, "a stock.picking.type is required")
+        product = self._a_product()
+        self.env.flush_all()
+
+        # -- POST (create) --------------------------------------------------
+        resp = self._post(
+            '/api/v1/stock-pickings', {'picking_type_id': picking_type.id},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertIn('id', body)
+        pkid = body['id']
+        self.env.invalidate_all()
+        picking = Picking.browse(pkid)
+        self.assertTrue(
+            picking.exists(), "POST must have created the stock.picking",
+        )
+
+        # -- GET item -------------------------------------------------------
+        resp = self._get('/api/v1/stock-pickings/%d' % pkid)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()['id'], pkid)
+
+        # -- GET collection -------------------------------------------------
+        resp = self._get(
+            '/api/v1/stock-pickings',
+            params={'domain': json.dumps([['id', '=', pkid]])},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self._assert_collection_body(resp.json(), pkid)
+
+        # -- PATCH a scalar field -------------------------------------------
+        resp = self._patch(
+            '/api/v1/stock-pickings/%d' % pkid, {'origin': 'CRUD-ORIGIN'},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json().get('origin'), 'CRUD-ORIGIN')
+
+        # -- x2many replace/clear on move_ids -------------------------------
+        # ``stock.move`` has no ``name`` field in Odoo 19
+        # (``_rec_name='reference'``); the locations come from the picking.
+        picking.write({'move_ids': [
+            Command.create({
+                'product_id': product.id, 'product_uom_qty': 1,
+                'location_id': picking.location_id.id,
+                'location_dest_id': picking.location_dest_id.id,
+            }),
+            Command.create({
+                'product_id': product.id, 'product_uom_qty': 2,
+                'location_id': picking.location_id.id,
+                'location_dest_id': picking.location_dest_id.id,
+            }),
+        ]})
+        self.env.flush_all()
+        self.assertEqual(len(picking.move_ids), 2)
+        self._assert_xmany_replace_and_clear(
+            '/api/v1/stock-pickings', picking, 'move_ids', picking.move_ids.ids,
+        )
+
+        # -- DELETE ---------------------------------------------------------
+        resp = self._delete('/api/v1/stock-pickings/%d' % pkid)
+        self.assertEqual(resp.status_code, 204, resp.text)
+        self.assertEqual(resp.text, '')
+        self.env.invalidate_all()
+        self.assertFalse(
+            Picking.browse(pkid).exists(),
+            "DELETE must have unlinked the stock.picking",
+        )
+
+    # ------------------------------------------------------------------
+    # crm.lead -- full lifecycle (no x2many write DTO field).
+    # ------------------------------------------------------------------
+    def test_crm_lead_full_crud_lifecycle(self):
+        """POST -> GET(id) -> GET(collection) -> PATCH -> DELETE.
+
+        Strict in the expected install profile: skips only if ``crm`` is not
+        installed. ``crm.lead`` exposes no x2many write field, so this proves the
+        scalar verb -> ORM mappings only.
+        """
+        if 'crm.lead' not in self.env:
+            self.skipTest("crm addon not installed in this profile")
+        Lead = self.env['crm.lead']
+
+        # -- POST (create) --------------------------------------------------
+        resp = self._post(
+            '/api/v1/crm-leads', {'name': 'CRUD Lead', 'type': 'lead'},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertIn('id', body)
+        self.assertEqual(body['name'], 'CRUD Lead')
+        lid = body['id']
+        self.env.invalidate_all()
+        lead = Lead.browse(lid)
+        self.assertTrue(lead.exists(), "POST must have created the crm.lead")
+        self.assertEqual(lead.name, 'CRUD Lead')
+
+        # -- GET item -------------------------------------------------------
+        resp = self._get('/api/v1/crm-leads/%d' % lid)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()['id'], lid)
+
+        # -- GET collection -------------------------------------------------
+        resp = self._get(
+            '/api/v1/crm-leads',
+            params={'domain': json.dumps([['id', '=', lid]])},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self._assert_collection_body(resp.json(), lid)
+
+        # -- PATCH (write) --------------------------------------------------
+        resp = self._patch('/api/v1/crm-leads/%d' % lid, {'name': 'CRUD Lead v2'})
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json().get('name'), 'CRUD Lead v2')
+
+        # -- DELETE (unlink) ------------------------------------------------
+        resp = self._delete('/api/v1/crm-leads/%d' % lid)
+        self.assertEqual(resp.status_code, 204, resp.text)
+        self.assertEqual(resp.text, '')
+        self.env.invalidate_all()
+        self.assertFalse(
+            Lead.browse(lid).exists(), "DELETE must have unlinked the crm.lead",
+        )

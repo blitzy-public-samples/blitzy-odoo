@@ -70,9 +70,9 @@ from __future__ import annotations
 import datetime  # noqa: TC003
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from .base import BaseRestModel, PageMeta
+from .base import BaseRestModel, BaseRestReadModel, PageMeta
 
 
 class SaleOrderCreate(BaseRestModel):
@@ -134,22 +134,20 @@ class SaleOrderUpdate(BaseRestModel):
     order_line: Optional[list[int]] = None
 
 
-class SaleOrderRead(BaseModel):
+class SaleOrderRead(BaseRestReadModel):
     """Lenient response body for a single ``sale.order`` record.
 
-    This DTO is populated server-side from an ORM record, so it is deliberately
-    lenient: ``from_attributes=True`` allows construction directly from a record
-    (or from a ``read()`` mapping) and unknown keys are silently ignored. It
-    must never be strict, otherwise surplus ORM keys would break serialization
-    and the field-set parity guarantee with JSON-RPC.
+    Lenient by inheritance from :class:`BaseRestReadModel`
+    (``from_attributes=True``): it is populated server-side directly from an ORM
+    record (or from a ``read()`` mapping) and unknown keys are silently ignored.
+    It must never be strict, otherwise surplus ORM keys would break
+    serialization and the field-set parity guarantee with JSON-RPC.
 
     ``id`` is always present; every other field is optional because a given user
     may lack read access to some of them (in which case the controller simply
     omits them), keeping the exposed field set aligned with what the ORM returns
     for that user.
     """
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: Optional[str] = None

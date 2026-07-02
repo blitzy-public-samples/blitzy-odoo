@@ -63,9 +63,9 @@ from __future__ import annotations
 import datetime  # noqa: TC003
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from .base import BaseRestModel, PageMeta
+from .base import BaseRestModel, BaseRestReadModel, PageMeta
 
 # ---------------------------------------------------------------------------
 # Stable Selection value sets, mirrored verbatim from the ORM model so the
@@ -239,10 +239,11 @@ class StockPickingUpdate(BaseRestModel):
     )
 
 
-class StockPickingRead(BaseModel):
+class StockPickingRead(BaseRestReadModel):
     """Lenient response DTO for a single ``stock.picking`` record.
 
-    Built directly from an ORM record (``from_attributes=True``) and used both
+    Lenient by inheritance from :class:`BaseRestReadModel`
+    (``from_attributes=True``): built directly from an ORM record and used both
     for the single-record ``GET`` and as the element type of
     :class:`StockPickingList`. It is deliberately **not** strict: extra keys the
     ORM may return are ignored, which keeps the response field set aligned with
@@ -252,8 +253,6 @@ class StockPickingRead(BaseModel):
     computed fields ``name``, ``state``, ``date_done`` and ``picking_type_code``,
     matching what a JSON-RPC ``read`` of the same record would return.
     """
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: int = Field(description="Database identifier of the transfer.")
     name: str | None = Field(

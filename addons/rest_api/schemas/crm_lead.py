@@ -58,9 +58,9 @@ from __future__ import annotations
 import datetime  # noqa: TC003
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from .base import BaseRestModel, PageMeta
+from .base import BaseRestModel, BaseRestReadModel, PageMeta
 
 
 class CrmLeadCreate(BaseRestModel):
@@ -203,11 +203,11 @@ class CrmLeadUpdate(BaseRestModel):
     lost_reason_id: int | None = None
 
 
-class CrmLeadRead(BaseModel):
+class CrmLeadRead(BaseRestReadModel):
     """Response representation of a single ``crm.lead`` record.
 
-    This is a **response** DTO, so it is deliberately lenient rather than strict:
-    ``from_attributes=True`` lets it be built directly from an ORM record or a
+    Lenient by inheritance from :class:`BaseRestReadModel`
+    (``from_attributes=True``): it is built directly from an ORM record or a
     ``read``/``search_read`` dict, and because it is not ``extra='forbid'`` any
     surplus keys returned by the ORM are silently ignored -- exactly what keeps
     the exposed field set aligned with what the ORM would return for the
@@ -225,8 +225,6 @@ class CrmLeadRead(BaseModel):
     set is kept in deliberate one-to-one correspondence with the ORM columns of
     ``crm.lead``.
     """
-
-    model_config = ConfigDict(from_attributes=True)
 
     # --- Identity -----------------------------------------------------------
     id: int
