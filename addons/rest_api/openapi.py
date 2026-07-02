@@ -377,6 +377,42 @@ def _split_base(openapi_path: str):
     return base, base != openapi_path
 
 
+def _server_relative_path(openapi_path: str) -> str:
+    """Return ``openapi_path`` relative to the document's ``servers[0].url``.
+
+    Every operation's effective URL is, per the OpenAPI specification, the
+    ``servers[].url`` joined with the operation's path key. Because this
+    document declares a single server whose ``url`` is :data:`API_BASE_PATH`
+    (``/api/v1``), each path key is emitted *relative* to that base so the join
+    reproduces the real route exactly once, without duplicating the prefix::
+
+        '/api/v1/partners'             -> '/partners'
+        '/api/v1/partners/{record_id}' -> '/partners/{record_id}'
+        '/api/v1'                      -> '/'
+        '/api/v1/'                     -> '/'
+
+    The absolute route (e.g. ``/api/v1/partners``) is still what the werkzeug
+    router matches and what ``servers[0].url + key`` resolves to; only the
+    document's *representation* of the key is made relative. A path that does
+    not start with :data:`API_BASE_PATH` (which should not occur for a
+    ``type='rest'`` route) is returned unchanged, making this a safe no-op for
+    anything already relative.
+
+    Args:
+        openapi_path: an absolute OpenAPI path template (as produced by
+            :func:`_convert_path` from a werkzeug rule).
+
+    Returns:
+        str: the path key relative to ``servers[0].url``; always begins with
+        ``'/'``.
+    """
+    if openapi_path == API_BASE_PATH:
+        return '/'
+    if openapi_path.startswith(API_BASE_PATH + '/'):
+        return openapi_path[len(API_BASE_PATH):] or '/'
+    return openapi_path
+
+
 def _rest_methods(routing: dict) -> list:
     """Return the documented REST verbs declared by a routing rule.
 
@@ -728,8 +764,13 @@ def _add_meta_paths(paths: dict) -> None:
     ``type='http', auth='none'``, so they are deliberately excluded from the
     ``type='rest'`` enumeration. They are added here explicitly and marked
     ``security: []`` (no authentication) so the document fully describes the
-    surface. :meth:`dict.setdefault` avoids clobbering an entry should one ever
-    be produced by enumeration.
+    surface. Their keys are emitted *relative* to ``servers[0].url``
+    (:data:`API_BASE_PATH`) -- ``'/'`` for discovery and ``'/openapi.json'`` for
+    the specification -- so that ``servers[0].url + key`` reproduces the real
+    ``/api/v1/`` and ``/api/v1/openapi.json`` routes, consistent with the
+    server-relative model paths from :func:`_build_paths`.
+    :meth:`dict.setdefault` avoids clobbering an entry should one ever be
+    produced by enumeration.
 
     Args:
         paths: the ``paths`` object being assembled (mutated in place).
@@ -740,7 +781,7 @@ def _add_meta_paths(paths: dict) -> None:
             'content': {JSON_MEDIA_TYPE: {'schema': {'type': 'object'}}},
         },
     }
-    paths.setdefault(f'{API_BASE_PATH}/', {
+    paths.setdefault('/', {
         'get': {
             'tags': ['Meta'],
             'summary': "REST API version discovery",
@@ -759,7 +800,7 @@ def _add_meta_paths(paths: dict) -> None:
             },
         },
     })
-    paths.setdefault(f'{API_BASE_PATH}/openapi.json', {
+    paths.setdefault('/openapi.json', {
         'get': {
             'tags': ['Meta'],
             'summary': "OpenAPI 3.1 specification document",
@@ -800,7 +841,10 @@ def _build_paths(routing_map) -> dict:
         openapi_path, path_params = _convert_path(rule.rule)
         base, is_item = _split_base(openapi_path)
         spec = _RESOURCES.get(base)
-        path_item = paths.setdefault(openapi_path, {})
+        # The _RESOURCES lookup above uses the *absolute* base; the emitted path
+        # key, however, is made relative to servers[0].url (API_BASE_PATH) so the
+        # OpenAPI "servers[].url + path" join reproduces the real route exactly.
+        path_item = paths.setdefault(_server_relative_path(openapi_path), {})
         for method in _rest_methods(routing):
             path_item[method.lower()] = _build_operation(
                 method, spec, is_item, path_params, base,
@@ -874,11 +918,12 @@ def build_openapi(env=None) -> dict:
             ),
         },
         'servers': [{
-            'url': '/',
+            'url': API_BASE_PATH,
             'description': (
-                "Odoo host root. Every REST endpoint is served under the "
-                f"{API_BASE_PATH} prefix, which is already included in each "
-                "path key below."
+                "Base URL of the versioned REST surface. Every path key in this "
+                "document is relative to this server base, so an operation's "
+                "effective URL is this server URL joined with its path key "
+                f"(e.g. {API_BASE_PATH} + '/partners' -> {API_BASE_PATH}/partners)."
             ),
         }],
         'tags': _document_tags(),

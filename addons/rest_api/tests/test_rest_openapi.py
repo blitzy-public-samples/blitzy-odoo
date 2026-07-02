@@ -50,11 +50,13 @@ The assertions below mirror the **staged** assembler
 
 Server-base / path-prefix tolerance
 ------------------------------------
-The staged assembler sets ``servers=[{'url': '/'}]`` and keys ``paths`` with
-**absolute** ``/api/v1/...`` strings. :meth:`TestRestOpenApi._paths_index`
-normalises every path key to its absolute form using ``servers[0].url`` as the
-base, so the path assertions pass regardless of whether a future assembler
-revision keys ``paths`` absolutely or server-relative.
+The assembler sets ``servers=[{'url': '/api/v1'}]`` and keys ``paths``
+**relative** to that base (``/partners``, ``/partners/{record_id}``, ``/``,
+``/openapi.json``), so an operation's effective URL is ``servers[0].url`` joined
+with its path key. :meth:`TestRestOpenApi._paths_index` reconstructs the
+absolute path of every key using ``servers[0].url`` as the base, so the path
+assertions pass regardless of whether a given assembler revision keys ``paths``
+server-relative (the current design) or absolutely.
 
 Boundaries (AAP sections 0.2, 0.7 / Gates 1 & 4)
 ------------------------------------------------
@@ -238,12 +240,11 @@ class TestRestOpenApi(common.HttpCase):
     def _paths_index(self):
         """Index ``paths`` by absolute path, tolerating the server-base prefix.
 
-        The assembler currently keys ``paths`` with absolute ``/api/v1/...``
-        strings and declares ``servers=[{'url': '/'}]``. To stay robust should a
-        revision key ``paths`` relative to the server base instead, every key is
-        normalised to its absolute form: keys already under ``/api`` are kept
-        as-is, otherwise the (trailing-slash-stripped) ``servers[0].url`` base is
-        prepended.
+        The assembler keys ``paths`` *relative* to the server base and declares
+        ``servers=[{'url': '/api/v1'}]``. To stay robust should a revision key
+        ``paths`` absolutely instead, every key is normalised to its absolute
+        form: keys already under ``/api`` are kept as-is, otherwise the
+        (trailing-slash-stripped) ``servers[0].url`` base is prepended.
 
         :return: mapping of absolute path string -> OpenAPI path-item object.
         :rtype: dict
