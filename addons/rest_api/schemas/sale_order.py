@@ -34,6 +34,10 @@ server-assigned, so they are **excluded** from the write DTOs
 * ``amount_untaxed`` / ``amount_tax`` / ``amount_total`` -- computed monetary
   totals (``compute='_compute_amounts'``).
 * ``invoice_status`` -- computed invoicing status.
+* ``currency_id`` -- computed from ``pricelist_id`` / ``company_id``
+  (``compute='_compute_currency_id'``, ``store=True``, ``precompute=True``) with
+  no inverse, so it is server-managed; a client influences the currency through
+  the writable ``pricelist_id`` and lets the ORM compute ``currency_id``.
 
 Request vs response strictness
 ------------------------------
@@ -81,10 +85,10 @@ class SaleOrderCreate(BaseRestModel):
     time and ``company_id`` to the current company).
 
     Computed, workflow-driven and auto-sequenced fields (``name``, ``state``,
-    ``amount_untaxed``, ``amount_tax``, ``amount_total``, ``invoice_status``)
-    are intentionally **not** accepted here; because the base model sets
-    ``extra='forbid'``, supplying any of them -- or any other unknown key --
-    raises a ``422`` validation error before the ORM is touched.
+    ``amount_untaxed``, ``amount_tax``, ``amount_total``, ``invoice_status``,
+    ``currency_id``) are intentionally **not** accepted here; because the base
+    model sets ``extra='forbid'``, supplying any of them -- or any other unknown
+    key -- raises a ``422`` validation error before the ORM is touched.
     """
 
     # Required: the customer the order is placed for (``res.partner`` id).
@@ -98,7 +102,6 @@ class SaleOrderCreate(BaseRestModel):
     commitment_date: Optional[datetime.datetime] = None
     note: Optional[str] = None
     pricelist_id: Optional[int] = None
-    currency_id: Optional[int] = None
     user_id: Optional[int] = None
     team_id: Optional[int] = None
     payment_term_id: Optional[int] = None
@@ -124,7 +127,6 @@ class SaleOrderUpdate(BaseRestModel):
     commitment_date: Optional[datetime.datetime] = None
     note: Optional[str] = None
     pricelist_id: Optional[int] = None
-    currency_id: Optional[int] = None
     user_id: Optional[int] = None
     team_id: Optional[int] = None
     payment_term_id: Optional[int] = None

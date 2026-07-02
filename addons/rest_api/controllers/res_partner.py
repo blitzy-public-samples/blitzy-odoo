@@ -67,6 +67,7 @@ import json
 
 import werkzeug.exceptions
 
+from odoo.fields import Command
 from odoo.http import Controller, request, route
 
 from odoo.addons.rest_api.schemas.base import PageMeta
@@ -165,11 +166,17 @@ class PartnerController(Controller):
         dto = PartnerCreate.model_validate_json(
             request.httprequest.get_data(as_text=True),
         )
+        model = request.env['res.partner']
+        # Translate any x2many list-of-id payloads (e.g. ``category_id``) into
+        # explicit Odoo commands before create -- a bare id list would only
+        # *link* records rather than set the full relation (see
+        # :meth:`_to_orm_write_values`).
+        values = self._to_orm_write_values(
+            model, dto.model_dump(exclude_unset=True),
+        )
         # ORM operation: create -- bound to the authenticated user so ACL /
         # record rules apply exactly as they would for JSON-RPC.
-        record = request.env['res.partner'].create(
-            dto.model_dump(exclude_unset=True),
-        )
+        record = model.create(values)
         return self._serialize_record(record)
 
     # ------------------------------------------------------------------
@@ -234,8 +241,14 @@ class PartnerController(Controller):
             raise werkzeug.exceptions.NotFound(
                 f"res.partner {record_id} not found",
             )
+        # Translate x2many list-of-id payloads into explicit Odoo commands so a
+        # PATCH *replaces* the full relation (and ``category_id=[]`` clears it)
+        # rather than merely linking records (see :meth:`_to_orm_write_values`).
+        values = self._to_orm_write_values(
+            record, dto.model_dump(exclude_unset=True),
+        )
         # ORM operation: write -- ACL / record rules / field groups enforced.
-        record.write(dto.model_dump(exclude_unset=True))
+        record.write(values)
         return self._serialize_record(record)
 
     # ------------------------------------------------------------------
@@ -290,6 +303,58 @@ class PartnerController(Controller):
         :rtype: list[str]
         """
         return [name for name in PartnerRead.model_fields if name != 'id']
+
+    @staticmethod
+    def _to_orm_write_values(model, values):
+        """Translate validated REST write values into ORM-ready values.
+
+        The request DTOs expose ``one2many`` / ``many2many`` relations as a
+        plain list of ids (``list[int]``) -- the natural REST contract, where a
+        client always transmits the *complete* desired set of related ids.
+        Odoo's ``create`` / ``write``, however, expect x2many values to be
+        expressed as *commands*. A bare id list is interpreted by the ORM as a
+        sequence of ``Command.link`` operations, which only *adds* the given
+        records to the relation: it can neither replace the existing set nor
+        clear it. A REST ``PATCH`` sending ``category_id=[1, 2]`` would then
+        link ``1`` and ``2`` on top of whatever tags already exist, and
+        ``category_id=[]`` would be a silent no-op rather than clearing the
+        relation.
+
+        To honour full-list replacement semantics each ``one2many`` /
+        ``many2many`` value that is a list is wrapped in a single
+        :meth:`odoo.fields.Command.set` -- equivalent to the ``(6, 0, ids)``
+        command -- which replaces the relation with exactly ``ids`` and clears
+        it when ``ids`` is empty. Scalar fields (including ``many2one``, sent as
+        a bare id), fields carrying a value that is not a list, and any field
+        absent from ``values`` are passed through unchanged.
+
+        The conversion is written generically against ``model._fields`` (rather
+        than hard-coding ``category_id``) so the four sibling controllers
+        inherit identical, correct x2many semantics when they mirror this
+        canonical controller.
+
+        :param model: the target recordset, used only for field metadata via
+            ``model._fields``.
+        :param dict values: the DTO dump, already limited to client-supplied
+            keys by ``exclude_unset=True``.
+        :return: a new dict safe to pass to ``create`` / ``write``.
+        :rtype: dict
+        """
+        converted = {}
+        for fname, value in values.items():
+            field = model._fields.get(fname)
+            if (
+                field is not None
+                and field.type in ('one2many', 'many2many')
+                and isinstance(value, list)
+            ):
+                # Full-list replacement -- (6, 0, ids); clears when ids == [].
+                converted[fname] = [Command.set(value)]
+            else:
+                # Scalars (incl. many2one ids), explicit ``None`` and any
+                # non-list value are forwarded verbatim.
+                converted[fname] = value
+        return converted
 
     @staticmethod
     def _serialize_row(model, row):

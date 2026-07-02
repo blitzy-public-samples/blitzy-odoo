@@ -2626,6 +2626,17 @@ class RestDispatcher(Dispatcher):
     routing_type = 'rest'
     mimetypes = ('application/json',)
 
+    #: Response-header keys (compared case-insensitively) that are SAFE to carry
+    #: from a raised ``werkzeug.exceptions.HTTPException`` onto the REST
+    #: error-envelope response. These are protocol / challenge headers only --
+    #: NEVER body headers such as ``Content-Type`` / ``Content-Length`` (which
+    #: :meth:`Request.make_json_response` owns and which would otherwise
+    #: contradict the JSON envelope). Keeping ``WWW-Authenticate`` preserves the
+    #: ``Bearer`` challenge attached by ``_auth_method_rest_bearer`` on a 401
+    #: (keeping the response standards-compliant); keeping ``Allow`` preserves
+    #: the permitted-method list on a 405.
+    _SAFE_ERROR_HEADERS = frozenset({'www-authenticate', 'allow'})
+
     def __init__(self, request):
         super().__init__(request)
         self.jsonrequest = None
@@ -2705,6 +2716,10 @@ class RestDispatcher(Dispatcher):
         §0.7.1).
         """
         details = []
+        # Safe protocol headers to carry over onto the REST error-envelope
+        # response. Only populated by the HTTPException branch below (e.g. the
+        # ``WWW-Authenticate`` challenge on a 401); passed to make_json_response.
+        headers = []
         # A pydantic v2 ValidationError -> HTTP 422. It is detected
         # module-qualified (its __module__ starts with "pydantic") so that
         # odoo.http needs NO pydantic import (isolation mandate) AND so that
@@ -2726,12 +2741,29 @@ class RestDispatcher(Dispatcher):
                     })
             except Exception:  # noqa: BLE001 - never fail while building an error
                 details = []
-        elif isinstance(exc, HTTPException) and exc.response is not None:
-            return exc.response
         elif isinstance(exc, HTTPException):
+            # A ``type='rest'`` route must ALWAYS answer with the REST envelope,
+            # so an HTTPException is rendered into ``{status, code, message,
+            # details}`` here. ``exc.response`` (an arbitrary, possibly
+            # HTML/framework body) is deliberately NOT returned verbatim: doing
+            # so would let a non-REST body leak onto the surface and break the
+            # uniform REST error contract (AAP §0.1.1 implicit requirement /
+            # §0.7.1 R1).
             status = exc.code or 500
             code = (exc.name or 'error').lower().replace(' ', '_')
             message = exc.description
+            # Carry over ONLY safe protocol headers (see ``_SAFE_ERROR_HEADERS``)
+            # -- e.g. the ``WWW-Authenticate: Bearer`` challenge attached by
+            # ``_auth_method_rest_bearer`` on a 401, or the ``Allow`` header on a
+            # 405 -- never body headers such as ``Content-Type`` /
+            # ``Content-Length``, which ``make_json_response`` owns and which
+            # would contradict the JSON envelope.
+            try:
+                for hkey, hval in exc.get_headers():
+                    if hkey.lower() in self._SAFE_ERROR_HEADERS:
+                        headers.append((hkey, hval))
+            except Exception:  # noqa: BLE001 - never fail while building an error
+                headers = []
         elif isinstance(exc, UserError):
             # Covers AccessDenied (403), AccessError (403), MissingError (404),
             # odoo.exceptions.ValidationError (422) and plain UserError (422)
@@ -2750,7 +2782,7 @@ class RestDispatcher(Dispatcher):
             'message': message,
             'details': details,
         }
-        return self.request.make_json_response(body, status=int(status))
+        return self.request.make_json_response(body, headers=headers, status=int(status))
 
 
 # =========================================================

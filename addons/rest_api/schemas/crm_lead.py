@@ -72,13 +72,18 @@ class CrmLeadCreate(BaseRestModel):
     non-existent ``mobile`` field -- or a wrongly-typed value is rejected with a
     ``422`` before the ORM is touched.
 
-    Exactly two fields are required, mirroring the two ``required=True`` columns
-    on ``crm.lead``:
+    Only ``name`` is genuinely client-required:
 
-    * ``name`` -- the opportunity/lead title (ORM ``Char``, ``required=True``).
-    * ``type`` -- ``'lead'`` or ``'opportunity'`` (ORM ``Selection``,
-      ``required=True``); typed as a :data:`~typing.Literal` because the value
-      set is stable and closed.
+    * ``name`` -- the opportunity/lead title (ORM ``Char``, ``required=True``
+      with no ORM default), so it is required here.
+    * ``type`` -- ``'lead'`` or ``'opportunity'`` (ORM ``Selection``); although
+      the column is ORM ``required=True`` it also carries an ORM ``default``
+      (``'lead'`` or ``'opportunity'`` depending on the user's groups), so it is
+      **not** genuinely client-required and is therefore **optional** here: a
+      create that omits it is valid and must receive the Odoo default, exactly as
+      an equivalent JSON-RPC ``create`` would (codebase-wins field derivation,
+      R7 / G3). Requiring it would wrongly reject such a create. Typed as a
+      :data:`~typing.Literal` because the value set is stable and closed.
 
     Every other field is optional and defaults to ``None`` so callers send only
     the attributes they wish to set; omitted attributes fall back to the ORM's
@@ -88,7 +93,13 @@ class CrmLeadCreate(BaseRestModel):
 
     # --- Required -----------------------------------------------------------
     name: str
-    type: Literal['lead', 'opportunity']
+
+    # --- Optional: ORM-defaulted, so NOT marked required (R7 / G3) ----------
+    # ``crm.lead.type`` is ORM ``required=True`` but has an ORM ``default``, so a
+    # create that omits it is valid and receives the Odoo default. With
+    # ``exclude_unset=True`` in the controller, omitting it here lets that ORM
+    # default apply -- matching JSON-RPC-equivalent behaviour.
+    type: Literal['lead', 'opportunity'] | None = None
 
     # --- Ownership / routing (Many2one -> id) -------------------------------
     user_id: int | None = None

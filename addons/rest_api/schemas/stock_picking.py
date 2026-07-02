@@ -107,8 +107,15 @@ class StockPickingCreate(BaseRestModel):
     making them mandatory here would wrongly reject a valid create that supplies
     only ``picking_type_id``.
 
-    The auto-generated / computed fields ``name``, ``state``, ``date_done`` and
-    ``picking_type_code`` are intentionally **not** accepted on create.
+    The auto-generated / computed / server-managed fields ``name``, ``state``,
+    ``date_done`` and ``picking_type_code`` are intentionally **not** accepted on
+    create. For the same reason the following are excluded from the write surface
+    and left for Odoo to derive from writable inputs (``picking_type_id``,
+    ``location_id``/``location_dest_id`` and the stock moves): ``backorder_id``
+    (``readonly=True``), ``date_deadline`` (``compute='_compute_date_deadline'``,
+    no inverse) and ``company_id`` (a ``related='picking_type_id.company_id'``
+    read-only field). All three are exposed for reading on
+    :class:`StockPickingRead`.
     """
 
     # -- Required -----------------------------------------------------------
@@ -138,10 +145,6 @@ class StockPickingCreate(BaseRestModel):
         default=None,
         description="Free-form notes (HTML).",
     )
-    backorder_id: int | None = Field(
-        default=None,
-        description="Back order of another stock.picking, if any.",
-    )
     priority: str | None = Field(
         default=None,
         description="Reservation priority ('0' = Normal, '1' = Urgent).",
@@ -150,17 +153,9 @@ class StockPickingCreate(BaseRestModel):
         default=None,
         description="Scheduled processing date/time for the transfer.",
     )
-    date_deadline: datetime.datetime | None = Field(
-        default=None,
-        description="Deadline before which the transfer should be validated.",
-    )
     partner_id: int | None = Field(
         default=None,
         description="Contact (res.partner) associated with the transfer.",
-    )
-    company_id: int | None = Field(
-        default=None,
-        description="Company (res.company) owning the transfer.",
     )
     user_id: int | None = Field(
         default=None,
@@ -187,8 +182,10 @@ class StockPickingUpdate(BaseRestModel):
     Identical field surface to :class:`StockPickingCreate` but for a **partial**
     update: every field -- including ``picking_type_id`` -- is optional so a
     client may send only the attributes it wants to change. Strictness
-    (``extra='forbid'``) is preserved, and the same read-only/computed fields
-    (``name``, ``state``, ``date_done``, ``picking_type_code``) remain excluded.
+    (``extra='forbid'``) is preserved, and the same read-only / computed /
+    server-managed fields (``name``, ``state``, ``date_done``,
+    ``picking_type_code``, ``backorder_id``, ``date_deadline``, ``company_id``)
+    remain excluded.
     """
 
     picking_type_id: int | None = Field(
@@ -211,10 +208,6 @@ class StockPickingUpdate(BaseRestModel):
         default=None,
         description="Free-form notes (HTML).",
     )
-    backorder_id: int | None = Field(
-        default=None,
-        description="Back order of another stock.picking, if any.",
-    )
     priority: str | None = Field(
         default=None,
         description="Reservation priority ('0' = Normal, '1' = Urgent).",
@@ -223,17 +216,9 @@ class StockPickingUpdate(BaseRestModel):
         default=None,
         description="Scheduled processing date/time for the transfer.",
     )
-    date_deadline: datetime.datetime | None = Field(
-        default=None,
-        description="Deadline before which the transfer should be validated.",
-    )
     partner_id: int | None = Field(
         default=None,
         description="Contact (res.partner) associated with the transfer.",
-    )
-    company_id: int | None = Field(
-        default=None,
-        description="Company (res.company) owning the transfer.",
     )
     user_id: int | None = Field(
         default=None,
